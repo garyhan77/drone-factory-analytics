@@ -16,17 +16,17 @@ Avionics is the bottleneck. Motor & Prop is where the defect spike happens.
 
 Two shifts, 06:00 to 22:00, Monday to Friday (80 working hours a week). Starting values, to be tuned once the simulation runs:
 
-| Station | Code | Lanes | Typical cycle | First-pass fail rate | Capacity |
+| Station | Code | Lanes | Typical cycle | First-pass fail rate | Capacity (measured) |
 |---|---|---|---|---|---|
-| Airframe | AFL | 3 | 3.0 h | 3.0% | about 80 a week |
-| Wing Assembly | WNG | 3 | 3.5 h | 3.5% | about 68 a week |
-| Motor & Prop | MTR | 2 | 2.0 h | 2.5% (22% in weeks 12-15) | about 80 a week |
-| Avionics | AVN | 2 | 5.0 h | 5.0% | about 30 a week |
-| Final Test | FNT | 3 | 3.0 h | 4.0% | about 80 a week |
+| Airframe | AFL | 3 | 3.0 h | 3.0% | about 68 a week |
+| Wing Assembly | WNG | 3 | 3.5 h | 3.5% | about 58 a week |
+| Motor & Prop | MTR | 2 | 2.0 h | 2.5% (22% in weeks 12-15) | about 70 a week |
+| Avionics | AVN | 2 | 4.4 h | 5.0% | about 29 a week |
+| Final Test | FNT | 3 | 3.0 h | 4.0% | about 68 a week |
 
 A failed inspection adds 1 to 2.5 hours of rework, and a second inspection then passes.
 
-Weekly releases: 18 in week 1, rising to 30 by week 12, then to 34 by week 26. Avionics capacity is about 30, so a queue forms around week 12.
+Weekly releases: 18 in week 1, rising to 30 by week 12, then to 34 by week 26. Avionics capacity is about 29 a week, so a queue forms around week 12, when releases reach 30; by week 26 Avionics is at about 116% of capacity while the next-tightest station (Wing Assembly) is at about 59%. (Capacities are measured by saturating each station in the simulation, with lanes, lognormal cycle times and rework; jobs that cannot finish before the end of a shift wait for the next one, which costs 12 to 19% of nominal capacity. Avionics was tuned from 5.0 h to 4.4 h: at 5.0 h the queue formed around week 5 and reached 25 days; 4.4 h was chosen after comparing 4.2 to 4.6 h across 10 random seeds, where it gave a clear queue from week 12 and about 6 days of wait by the end.)
 
 ## Stack
 
