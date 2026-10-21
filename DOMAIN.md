@@ -179,16 +179,20 @@ Ten tables, each tied to a source system the IQME team works with. Exact columns
 
 ## Planted data errors
 
-The generator corrupts a small share of rows and records exactly which ones in an answer key, so each check can be scored on what it caught, missed, or wrongly flagged. Errors are placed by the story, not scattered randomly. Each window is defined by an event (the outage, the spike, the queue building), not a fixed week, so the errors land where the story is wherever it falls. Once the simulation is tuned, the measured weeks are written back here.
+The generator corrupts a small number of rows and records exactly which ones in an answer key (`data/answer_key.json`), so each check can be scored on what it caught, missed, or wrongly flagged. Errors are placed by the story, not scattered randomly: each window is found from the data (the outage, the spike, the queue building), so the errors land where the story is wherever it falls.
 
-| Planted error | Table | Where it lands | What it breaks |
-|---|---|---|---|
-| Negative inventory | inventory_snapshots | Ridgeline fastener parts, during the fastener outage and the spot-buy | days of stock remaining |
-| Missing defect code | inspections | Motor & Prop failures, during the defect spike | defect Pareto (row is kept and labelled UNCODED, not dropped) |
-| Orphan inspections | inspections | reworked units at Motor & Prop, during the defect spike | link between yield and the work it measures |
-| Over-receipt | receiving | Ridgeline catch-up shipments, after the outage | supplier on-time-in-full |
-| Duplicate work orders | work_orders | Avionics, once its queue is building | output counts and cycle times |
-| End before start | work_orders | Avionics, once its queue is building | cycle time (negative durations) |
+| Planted error | Rows | Table | Where it lands (event window, measured for seed 42) | What it looks like | Answer-key record |
+|---|---|---|---|---|---|
+| Negative inventory | 8 | inventory_snapshots | Spike-fastener rows with stock, from the first empty warehouse to 5 days after the last emergency lot arrives (11-25 March, 50 eligible) | Sign of on_hand flipped | `date\|part\|location` |
+| Missing defect code | 4 | inspections | First-attempt failures at Motor & Prop while substitute-lot drones are inspected (19 March to 14 April, 13 eligible) | Code is NULL, empty, or whitespace (a mix) | inspection_id |
+| Orphan inspections | 3 | inspections | Rework re-inspections at Motor & Prop in the same window (13 eligible) | Serial changed to `DF-9...`, a drone that does not exist | inspection_id |
+| Over-receipt | 3 | receiving | Ridgeline regular lots received in the 3 weeks after the first emergency lot (11 eligible) | qty_received is 20 to 50% above qty_expected | shipment_id |
+| Duplicate work orders | 12 | work_orders | Avionics jobs from the first week its average wait exceeds 24 hours (week 12 on, 393 eligible) | A re-keyed copy: new wo_id, same drone, station and times | wo_id of the copy |
+| End before start | 8 | work_orders | Completed Avionics jobs in the same window (391 eligible, never a job that was duplicated) | end_ts 30 minutes to 4 hours before start_ts | wo_id |
+
+Counts are lower if a window holds fewer eligible rows (tests confirm every error is planted in other seeds too). After planting, the only anomalies in the data are the planted ones: tests compare the corrupted tables with the clean ones and confirm nothing else differs.
+
+The answer key records the copy's wo_id for duplicates, so the Phase 3 check should report every work order in a duplicated group except the earliest.
 
 Not planted: unknown part in receiving (same pattern as orphan inspections).
 

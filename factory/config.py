@@ -185,3 +185,26 @@ KITTING_CAP_PIECES_PER_DAY = 200  # per station
 SPOT_BUY_AFTER_BLOCKED_DAYS = 2  # working days a Ridgeline part blocks work before an emergency buy
 SPOT_BUY_COVER_DAYS = 7  # an emergency buy covers this many days of demand
 SUBSTITUTE_LOT_PREFIX = "SUB"
+
+
+# --- Planted data errors ---------------------------------------------------------
+# How many rows to corrupt for each error (fewer if the event window holds fewer eligible rows).
+PLANTED_COUNTS = {
+    "negative_inventory": 8,
+    "missing_defect_code": 4,
+    "orphan_inspections": 3,
+    "over_receipt": 3,
+    "duplicate_work_orders": 12,
+    "end_before_start": 8,
+}
+# Checks that should flag nothing: they guard relationships that no error is planted into.
+GUARD_CHECKS = (
+    "status_timestamp_mismatch",
+    "traceability_lot_not_in_receiving",
+    "traceability_serial_not_in_work_orders",
+    "finished_goods_not_passed_final_test",
+    "finished_goods_timestamps_out_of_order",
+)
+OUTAGE_PAD_DAYS = 5  # the outage window runs this long past the last emergency lot arriving
+CATCH_UP_WEEKS = 3  # Ridgeline catch-up shipments: received within this many weeks of the first emergency lot
+QUEUE_WAIT_THRESHOLD_HOURS = 24  # the Avionics queue is "building" from the first week its mean wait exceeds this
