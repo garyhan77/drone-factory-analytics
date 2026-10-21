@@ -3,18 +3,15 @@ import streamlit as st
 
 from factory import config as cfg
 from factory.viz import charts, findings, theme
+from factory.viz import queries
 from factory.viz.data import query
 from factory.viz.render import chart, current_palette, page_header
 
 pal = current_palette()
 page_header("Inventory & Suppliers", "Material planner", "Which parts will run out first, and where is the stock?")
 
-risk = query("SELECT * FROM v_inventory_risk ORDER BY cushion_days ASC NULLS LAST")
-perf = query("SELECT supplier_id, supplier_name, shipments_received, on_time_rate, in_full_rate, otif_rate, quantity_unverified, "
-             "avg_days_late, p90_days_late FROM v_supplier_performance ORDER BY otif_rate")
-gap = query("SELECT g.part_id, g.part_name, g.station_code, s.station_name, g.days_short_at_line, g.first_day, g.last_day, "
-            "g.avg_warehouse_stock FROM v_line_side_gap g JOIN clean_stations s USING (station_code) ORDER BY g.days_short_at_line DESC")
-regular = perf[perf["supplier_id"] != cfg.SPOT_BUY]
+data = queries.inventory()
+risk, perf, gap, regular = data["risk"], data["perf"], data["gap"], data["regular"]
 
 for sentence in findings.inventory_finding(risk, regular, gap):
     st.markdown(sentence)

@@ -3,25 +3,15 @@ import streamlit as st
 
 from factory import config as cfg
 from factory.viz import charts, findings
+from factory.viz import queries
 from factory.viz.data import query
 from factory.viz.render import chart, current_palette, page_header
 
 pal = current_palette()
 page_header("Quality & Traceability", "Quality engineer", "Why did yield drop, and which drones are affected?")
 
-weekly = query("SELECT week_start, station_seq, station_code, station_name, inspections, passes, fpy "
-               "FROM v_first_pass_yield_weekly ORDER BY station_seq, week_start")
-pareto = query("SELECT station_code, defect_code, fails, pct_of_fails, cum_pct FROM v_defect_pareto ORDER BY fails DESC, defect_code")
-lots = query("SELECT lot_id, part_id, station_code, supplier_id, supplier_name, drones_inspected, fails, fail_rate, "
-             "station_fail_rate, lift FROM v_lot_quality ORDER BY lift DESC NULLS LAST")
-flagged = findings.flagged_lots(lots)
-
-recall_all = query(
-    "WITH d AS (SELECT DISTINCT serial_number FROM clean_drone_part_lots WHERE lot_id = ANY(%s)) "
-    "SELECT COUNT(*) AS drones, COUNT(*) FILTER (WHERE f.shipped_ts IS NOT NULL) AS shipped, "
-    "COUNT(*) FILTER (WHERE f.serial_number IS NOT NULL AND f.shipped_ts IS NULL) AS packed, "
-    "COUNT(*) FILTER (WHERE f.serial_number IS NULL) AS in_line "
-    "FROM d LEFT JOIN clean_finished_goods f USING (serial_number)", (list(flagged["lot_id"]),))
+data = queries.quality()
+weekly, pareto, lots, flagged, recall_all = data["weekly"], data["pareto"], data["lots"], data["flagged"], data["recall"]
 
 for sentence in findings.quality_finding(weekly, lots, recall_all):
     st.markdown(sentence)

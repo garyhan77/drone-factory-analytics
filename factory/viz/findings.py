@@ -165,3 +165,16 @@ def data_quality_finding(results: pd.DataFrame, impact: pd.DataFrame) -> list[st
             f"**{dropped + kept} rows were dropped, repaired or relabelled before any metric was computed**: {dropped} dropped "
             f"and {kept} kept with a fix, so the numbers on the other pages never see the raw errors.")
     return out
+
+
+# ---------------------------------------------------------------------------- Overview
+
+def status_line(status: pd.Series) -> str:
+    """One sentence of context: how many drones started, over what period, and how many have not shipped yet.
+
+    "Started" is what the data records: a drone released late in the period may not have reached its first station yet.
+    """
+    started, shipped = int(status["started"]), int(status["shipped"])
+    launch, as_of = status["launch"], status["as_of"]
+    return (f"{started} drones were started between {launch.day} {launch:%B} and {as_of.day} {as_of:%B %Y}: "
+            f"{shipped} have shipped and {started - shipped} are still in the factory.")

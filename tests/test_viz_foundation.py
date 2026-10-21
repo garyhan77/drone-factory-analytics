@@ -107,10 +107,22 @@ def test_query_returns_plain_floats_not_decimals():
 
 # ---------------------------------------------------------------------------- the navigation shell
 
-def test_home_loads_with_five_pages_and_the_synthetic_note(monkeypatch):
+@pytest.fixture(scope="module")
+def database():
+    from factory.build import build
     load_dotenv(ROOT / ".env")
-    monkeypatch.setenv("DATABASE_URL", os.environ.get("TEST_DATABASE_URL", "postgresql://unused/unused"))
-    at = AppTest.from_file(APP, default_timeout=60).run()
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL is not set")
+    if not url.rstrip("/").rsplit("/", 1)[-1].endswith("_test"):
+        pytest.fail(f"TEST_DATABASE_URL must point at a database ending in _test, got: {url}")
+    build(url=url, write_files=False)
+    return url
+
+
+def test_home_opens_on_the_overview_with_the_synthetic_note(database, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", database)
+    at = AppTest.from_file(APP, default_timeout=90).run()
     assert not at.exception
     assert at.title[0].value == "Overview"
     assert any("synthetic data" in c.value for c in at.caption)

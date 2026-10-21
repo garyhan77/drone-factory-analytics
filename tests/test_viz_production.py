@@ -138,4 +138,8 @@ def test_the_production_page_runs_and_tells_the_story(database, monkeypatch):
     assert [s.value for s in at.subheader] == ["Drones started and finished each week", "Where drones wait",
                                               "Where drones are now", "What it does to delivery", "Station summary"]
     assert len([e for e in at.expander if e.label == "Table view"]) == 4              # every chart has a table view
+    stations = at.dataframe[-1].value                                                  # the station summary
+    assert list(stations["Station"]) == ["Airframe", "Wing Assembly", "Motor & Prop", "Avionics", "Final Test"]
+    assert stations["Average wait (h)"].iloc[0] == "-"                                 # the first station has no wait
+    assert all(isinstance(v, str) for col in ("Average wait (h)", "90th percentile wait (h)") for v in stations[col])   # one type per column
     assert any("synthetic data" in c.value for c in at.caption)

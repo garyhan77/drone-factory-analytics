@@ -3,28 +3,15 @@ import streamlit as st
 
 from factory import config as cfg
 from factory.viz import charts, findings
+from factory.viz import queries
 from factory.viz.data import query
 from factory.viz.render import chart, current_palette, page_header
 
 pal = current_palette()
 page_header("Data Quality", "Data analyst", "Can we trust the data?")
 
-results = query("SELECT check_name, category, severity, description, flagged_rows, planted_rows, caught, missed, false_positives FROM dq_results")
-order = {c: i for i, c in enumerate(["planted", "reconciliation", "guard", "sanity", "operational"])}
-results = results.assign(rank=results["category"].map(order)).sort_values(["rank", "check_name"]).drop(columns="rank").reset_index(drop=True)
-
-impact = query("""
-    SELECT 'Work orders' AS table_name, (SELECT COUNT(*) FROM raw_work_orders) AS raw_rows, (SELECT COUNT(*) FROM clean_work_orders) AS clean_rows,
-           (SELECT COUNT(*) FROM clean_work_orders WHERE end_unknown) AS changed,
-           'Re-keyed duplicates dropped. Jobs that end before they start are kept, with the end time left blank.' AS what
-    UNION ALL SELECT 'Inspections', (SELECT COUNT(*) FROM raw_inspections), (SELECT COUNT(*) FROM clean_inspections),
-           (SELECT COUNT(*) FROM clean_inspections WHERE code_was_missing),
-           'Inspections for a drone with no work order at that station dropped. Failures with no usable defect code are kept and labelled UNCODED.'
-    UNION ALL SELECT 'Inventory snapshots', (SELECT COUNT(*) FROM raw_inventory_snapshots), (SELECT COUNT(*) FROM clean_inventory_snapshots),
-           (SELECT COUNT(*) FROM clean_inventory_snapshots WHERE repaired), 'Negative readings replaced by the last good reading for that part and location.'
-    UNION ALL SELECT 'Receiving', (SELECT COUNT(*) FROM raw_receiving), (SELECT COUNT(*) FROM clean_receiving),
-           (SELECT COUNT(*) FROM clean_receiving WHERE qty_capped), 'Over-received quantities capped at the expected quantity; they earn no in-full credit.'
-""")
+data = queries.data_quality()
+results, impact = data["results"], data["impact"]
 
 for sentence in findings.data_quality_finding(results, impact):
     st.markdown(sentence)

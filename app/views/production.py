@@ -1,17 +1,15 @@
+import pandas as pd
 import streamlit as st
 
 from factory.viz import charts, findings
-from factory.viz.data import query
+from factory.viz import queries
 from factory.viz.render import chart, current_palette, page_header
 
 pal = current_palette()
 page_header("Production", "Production lead", "Why is output flat while starts keep rising?")
 
-summary = query("SELECT * FROM v_station_summary ORDER BY station_seq")
-output = query("SELECT week_start, units_started, units_completed FROM v_weekly_output ORDER BY week_start")
-wip = query("SELECT stage, drones, avg_age_days, max_age_days FROM v_wip_by_stage ORDER BY drones DESC")
-waits = query("SELECT week_start, station_seq, station_name, avg_wait_hours FROM v_queue_wait_weekly ORDER BY station_seq, week_start")
-lead = query("SELECT week_start, drones_shipped, avg_lead_days, avg_dwell_days FROM v_lead_time_weekly ORDER BY week_start")
+data = queries.production()
+summary, output, wip, waits, lead = data["summary"], data["output"], data["wip"], data["waits"], data["lead"]
 
 for sentence in findings.production_finding(summary, output, wip):
     st.markdown(sentence)
@@ -45,7 +43,9 @@ chart(charts.lead_dwell_chart(shipped, pal), shipped.rename(columns={
     "Only shipped drones can be measured, so the longest waits (drones still in the line) are missing from the recent weeks.")
 
 st.subheader("Station summary")
-summary_table = summary.astype(object).where(summary.notna(), "-")  # the first station has no wait: show a dash, not "None"
+summary_table = summary.copy()
+for column in ("avg_wait_hours", "p90_wait_hours"):  # the first station has no wait: show a dash as text, not "None" or a mixed column
+    summary_table[column] = summary_table[column].map(lambda v: "-" if pd.isna(v) else f"{v:.1f}")
 st.dataframe(summary_table.rename(columns={
     "station_seq": "Seq", "station_code": "Code", "station_name": "Station", "completed_orders": "Completed jobs",
     "median_cycle_hours": "Median cycle (h)", "p90_cycle_hours": "90th percentile cycle (h)",
