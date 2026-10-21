@@ -180,3 +180,49 @@ def lot_lift_chart(df, pal: Palette, flag_at: float | None = None) -> go.Figure:
         fig.add_vline(x=flag_at, line=dict(color=pal.ink_muted, width=1), annotation_text=f"Flagged at {flag_at:.0f}×",
                       annotation_position="top", annotation_font=dict(color=pal.ink_secondary, size=12))
     return fig
+
+
+# ---------------------------------------------------------------------------- Inventory & Suppliers
+
+from .theme import RISK, risk_label  # noqa: E402
+
+
+def cushion_chart(df, pal: Palette) -> go.Figure:
+    """Days of cushion for the most urgent parts. Negative means the stock runs out before a bad delivery arrives.
+
+    Bars wear the reserved status colours, and each status is named in the legend with its icon, so colour is never the
+    only signal.
+    """
+    df = df.reset_index(drop=True)
+    fig = go.Figure()
+    for status in RISK:
+        part = df[df["risk_status"] == status]
+        if part.empty:
+            continue
+        fig.add_trace(go.Bar(
+            y=part["label"], x=part["cushion_days"], name=risk_label(status), orientation="h",
+            marker=dict(color=RISK[status][2], cornerradius=CORNER_RADIUS), text=[f"{v:+.1f} days" for v in part["cushion_days"]],
+            textposition="outside", cliponaxis=False, textfont=dict(color=pal.ink_secondary),
+            customdata=part[["days_remaining", "arrival_bad_case_days"]].to_numpy(),
+            hovertemplate="%{y}<br>Stock lasts %{customdata[0]:.1f} days; a bad delivery arrives in %{customdata[1]:.0f}<br>"
+                          "Cushion %{x:+.1f} days<extra></extra>"))
+    # The legend is always shown: a status colour must be named (icon + label), even when only one status is present.
+    style(fig, pal, height=horizontal_bar_height(len(df), extra=64), legend=True, hovermode="closest")
+    fig.update_layout(bargap=bar_gap(), barmode="overlay", margin=dict(l=8, r=24, t=36, b=8))
+    fig.update_yaxes(categoryorder="array", categoryarray=list(df["label"]), autorange="reversed", showgrid=False)
+    low, high = min(0.0, float(df["cushion_days"].min())), max(0.0, float(df["cushion_days"].max()))
+    pad = 0.3 * max(high - low, 1.0)   # room beyond each end of the bars for their value labels
+    fig.update_xaxes(range=[low - pad, high + pad], showgrid=False, showticklabels=False, showline=False)
+    fig.add_vline(x=0, line=dict(color=pal.ink_muted, width=1))
+    return fig
+
+
+def stock_history_chart(df, pal: Palette) -> go.Figure:
+    """Warehouse and line-side stock over time for one part: two series that are both the subject."""
+    fig = go.Figure()
+    for location, name, colour in (("WAREHOUSE", "Warehouse", pal.accent), ("LINE_SIDE", "Line-side", pal.accent_2)):
+        part = df[df["location"] == location].sort_values("snapshot_date")
+        fig.add_trace(line_trace(part["snapshot_date"], part["on_hand"], name, colour, pal, hover="%{y:,.0f} units"))
+    style(fig, pal, height=320, legend=True)
+    fig.update_yaxes(title_text="Units on hand at the end of the day", rangemode="tozero")
+    return fig

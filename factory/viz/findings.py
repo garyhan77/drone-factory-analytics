@@ -103,3 +103,39 @@ def quality_finding(weekly: pd.DataFrame, lots: pd.DataFrame, recall: pd.DataFra
                        f"Where {'it is' if d == 1 else 'they are'} now: {int(r['shipped'])} shipped, {int(r['packed'])} packed and waiting, "
                        f"{int(r['in_line'])} still in the line.")
     return out
+
+
+# ---------------------------------------------------------------------------- Inventory & Suppliers
+
+def _join(names: list[str]) -> str:
+    """'a', 'a and b', 'a, b and c'."""
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def inventory_finding(risk: pd.DataFrame, perf: pd.DataFrame, gap: pd.DataFrame, urgent: int = 3) -> list[str]:
+    """Which parts will run out first, which supplier is least reliable, and where stock is in the wrong place.
+
+    `perf` should hold the regular suppliers only: an emergency distributor that is only used when a supplier fails is
+    not a fair comparison.
+    """
+    out = []
+    if len(risk):
+        flagged = risk[risk["risk_status"].isin(["STOCKOUT", "AT RISK"])]
+        worst = risk.sort_values("cushion_days", na_position="last").head(urgent)
+        suppliers = list(dict.fromkeys(worst["supplier_name"]))
+        origin = f", all from {suppliers[0]}" if len(suppliers) == 1 else f", from {_join(suppliers)}"
+        out.append(
+            f"**{len(flagged)} of {len(risk)} parts are at risk or out of stock**: their stock is expected to run out before "
+            f"the next delivery arrives, even allowing for a bad delivery. The most urgent are {_join(list(worst['part_name']))}{origin}.")
+    if len(perf) >= 2:
+        ranked = perf.sort_values("otif_rate")
+        low, others = ranked.iloc[0], ranked.iloc[1:]
+        out.append(
+            f"**{low['supplier_name']} is the least reliable supplier**: {low['otif_rate']:.0%} of its shipments arrived on "
+            f"time and in full, against {others['otif_rate'].min():.0%} to {others['otif_rate'].max():.0%} for the other regular suppliers.")
+    if len(gap):
+        top = gap.sort_values("days_short_at_line", ascending=False).iloc[0]
+        out.append(
+            f"**Right part, wrong place.** {len(gap)} parts were short at the line on at least one weekday while the warehouse "
+            f"held enough for a drone. The worst is {top['part_name']} at {top['station_name']}, short on {int(top['days_short_at_line'])} weekdays.")
+    return out
