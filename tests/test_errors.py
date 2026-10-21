@@ -131,7 +131,7 @@ def test_the_answer_key_has_the_agreed_counts_and_empty_guards(data):
         assert len(set(data.answer_key[name])) == count
     for guard in cfg.GUARD_CHECKS:
         assert data.answer_key[guard] == []
-    assert set(data.answer_key) == set(PLANTED) | set(cfg.GUARD_CHECKS)
+    assert set(data.answer_key) == set(PLANTED) | set(cfg.GUARD_CHECKS) | {"stock_does_not_reconcile"}
 
 
 def test_only_the_planted_snapshot_rows_differ_and_only_by_sign(data):
@@ -242,7 +242,7 @@ def test_a_work_order_chosen_for_duplication_is_never_also_made_end_before_start
     eligible["duplicate_work_orders"] = eligible["end_before_start"] = pd.Index([0, 1, 2])
     tables = {
         "inventory_snapshots": SNAPSHOTS, "inspections": inspections(), "work_orders": WORK_ORDERS.copy(),
-        "receiving": pd.DataFrame({"shipment_id": [], "qty_expected": [], "qty_received": pd.array([], dtype="Int64")}),
+        "receiving": pd.DataFrame({"shipment_id": [], "part_id": [], "qty_expected": [], "qty_received": pd.array([], dtype="Int64")}),
     }
     _, key, _ = plant_errors(tables, rng(), Windows(eligible, {}))
     assert len(key["duplicate_work_orders"]) == 2

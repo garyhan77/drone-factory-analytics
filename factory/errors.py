@@ -190,6 +190,10 @@ def plant_errors(
     out["work_orders"], key["end_before_start"] = plant_end_before_start(
         work_orders, still_eligible, counts["end_before_start"], rng)
 
+    # The reconciliation check sees an over-receipt from the stock side: the parts whose shipments were corrupted.
+    receiving = out["receiving"]
+    key["stock_does_not_reconcile"] = sorted(set(receiving.loc[receiving["shipment_id"].isin(key["over_receipt"]), "part_id"]))
+
     for guard in cfg.GUARD_CHECKS:
         key[guard] = []
     return out, key, windows

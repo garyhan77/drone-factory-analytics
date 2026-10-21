@@ -11,7 +11,7 @@ import json
 
 from factory import config as cfg
 from factory.checks import check_database, store_answer_key
-from factory.db import ROOT, apply_schema, connect, load_all
+from factory.db import ROOT, apply_schema, apply_views, connect, load_all
 from factory.generate import Generated, generate
 
 DATA_DIR = ROOT / "data"
@@ -22,6 +22,7 @@ def build(url: str | None = None, seed: int = cfg.SEED, write_files: bool = True
     with connect(url) as conn:
         apply_schema(conn)
         load_all(conn, data.tables)
+        apply_views(conn)
         store_answer_key(conn, data.answer_key)
         data.results = check_database(conn)
     if write_files:

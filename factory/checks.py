@@ -4,7 +4,8 @@ Each check is one .sql file. Its header comments give a severity, a category and
 query returns one row per offending record in a column called ``record_key``. The file name is the check name.
 
 Categories:
-  planted      an error the generator deliberately planted; scored against the answer key
+  planted         an error the generator deliberately planted; scored against the answer key
+  reconciliation  catches the effect of a planted error from a second angle; scored against the answer key
   guard        a relationship nothing was planted into; should flag nothing
   sanity       a standard validation rule; should flag nothing here
   operational  something operations should see, not a data error; not scored
@@ -24,8 +25,8 @@ from factory.db import ROOT, connect, load_dq_table
 
 CHECKS_DIR = ROOT / "sql" / "checks"
 SEVERITIES = {"error", "warn"}
-CATEGORIES = {"planted", "guard", "sanity", "operational"}
-SCORED = {"planted", "guard", "sanity"}
+CATEGORIES = {"planted", "reconciliation", "guard", "sanity", "operational"}
+SCORED = {"planted", "reconciliation", "guard", "sanity"}
 
 
 @dataclass(frozen=True)

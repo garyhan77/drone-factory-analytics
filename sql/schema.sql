@@ -2,20 +2,20 @@
 -- with duplicates and broken references, and the data quality checks exist
 -- to find them.
 
-DROP TABLE IF EXISTS raw_stations;
+DROP TABLE IF EXISTS raw_stations CASCADE;
 CREATE TABLE raw_stations (
     station_seq   INTEGER,
     station_code  VARCHAR,
     station_name  VARCHAR
 );
 
-DROP TABLE IF EXISTS raw_suppliers;
+DROP TABLE IF EXISTS raw_suppliers CASCADE;
 CREATE TABLE raw_suppliers (
     supplier_id   VARCHAR,
     supplier_name VARCHAR
 );
 
-DROP TABLE IF EXISTS raw_parts;
+DROP TABLE IF EXISTS raw_parts CASCADE;
 CREATE TABLE raw_parts (
     part_id        VARCHAR,
     part_name      VARCHAR,
@@ -25,14 +25,14 @@ CREATE TABLE raw_parts (
     lead_time_days INTEGER      -- quoted by the supplier
 );
 
-DROP TABLE IF EXISTS raw_bom;
+DROP TABLE IF EXISTS raw_bom CASCADE;
 CREATE TABLE raw_bom (
     station_code  VARCHAR,
     part_id       VARCHAR,
     qty_per_unit  INTEGER
 );
 
-DROP TABLE IF EXISTS raw_inventory_snapshots;
+DROP TABLE IF EXISTS raw_inventory_snapshots CASCADE;
 CREATE TABLE raw_inventory_snapshots (
     snapshot_date DATE,
     part_id       VARCHAR,
@@ -40,7 +40,7 @@ CREATE TABLE raw_inventory_snapshots (
     on_hand       INTEGER
 );
 
-DROP TABLE IF EXISTS raw_receiving;
+DROP TABLE IF EXISTS raw_receiving CASCADE;
 CREATE TABLE raw_receiving (
     shipment_id    VARCHAR,
     lot_id         VARCHAR,    -- each shipment is one supplier lot
@@ -53,7 +53,7 @@ CREATE TABLE raw_receiving (
     qty_received   INTEGER     -- NULL while the shipment is in transit
 );
 
-DROP TABLE IF EXISTS raw_work_orders;
+DROP TABLE IF EXISTS raw_work_orders CASCADE;
 CREATE TABLE raw_work_orders (
     wo_id          VARCHAR,
     serial_number  VARCHAR,
@@ -63,7 +63,7 @@ CREATE TABLE raw_work_orders (
     status         VARCHAR     -- COMPLETE | IN_PROGRESS
 );
 
-DROP TABLE IF EXISTS raw_inspections;
+DROP TABLE IF EXISTS raw_inspections CASCADE;
 CREATE TABLE raw_inspections (
     inspection_id  VARCHAR,
     serial_number  VARCHAR,
@@ -75,7 +75,7 @@ CREATE TABLE raw_inspections (
 );
 
 -- Traceability: which lot of each part went into which drone, and where.
-DROP TABLE IF EXISTS raw_drone_part_lots;
+DROP TABLE IF EXISTS raw_drone_part_lots CASCADE;
 CREATE TABLE raw_drone_part_lots (
     serial_number  VARCHAR,
     station_code   VARCHAR,    -- station where the part was installed
@@ -84,7 +84,7 @@ CREATE TABLE raw_drone_part_lots (
 );
 
 -- One row per drone that passed Final Test.
-DROP TABLE IF EXISTS raw_finished_goods;
+DROP TABLE IF EXISTS raw_finished_goods CASCADE;
 CREATE TABLE raw_finished_goods (
     serial_number   VARCHAR,
     test_passed_ts  TIMESTAMP,

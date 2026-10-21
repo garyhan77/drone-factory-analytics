@@ -143,11 +143,11 @@ The simulation was tuned and checked across seeds; these are the real events in 
 - The thread locker hits zero total stock in weeks 11 and 12 (1 and 3 days); the other fasteners run down to an empty warehouse in week 10. Emergency lots are ordered on 16 and 18 March (week 11) and arrive on 18 and 20 March.
 - 58 drones carry a substitute-lot fastener, in weeks 11, 12, 14 and 15 (a double hump: older regular stock is used first). They fail first inspection at Motor & Prop 20.7% of the time against 2.2% for the rest, and weekly Motor & Prop yield dips to 88-91% in weeks 11-12 and 84-88% in weeks 14-15.
 - Avionics wait grows from about 11 hours (weeks 1-10) to 36 (week 12), 78 (week 14), 271 (week 20) and 427 (week 26). Wing Assembly's wait peaks at about 110 hours; the other stations stay under 10.
-- Ridgeline has the lowest on-time-in-full rate (0.75 against 0.87 to 0.91).
+- Ridgeline has the lowest on-time-in-full rate: 0.74, against 0.84 to 0.89 for the other regular suppliers (its three over-received shipments earn no in-full credit). The spot-buy distributor is perfect, on 9 shipments.
 - Of 738 drones released, 620 passed Final Test, 609 shipped, 6 are packed and waiting for the next batch, and 5 are not yet packed. The other 118 are still on the line at the extract, mostly queued at Avionics.
 - Lead time from first station to shipped grows from 3.7 days (drones shipped in weeks 4-9) to 19.6 days (weeks 20-25), while dwell from test pass to shipped stays at about 1.9 days. The delay is upstream. Caveat for any analysis: lead time is only measurable for drones that have shipped, so the longest waits (drones still stuck at Avionics) are missing from the recent weeks and the real growth is understated.
 - Across seeds 0 to 5, the first emergency buy for a spike fastener is placed in weeks 10 to 13 in every seed, and substitute-lot drones fail more than three times as often as the rest.
-- Supply risk at the extract: about 21 of 40 parts look at risk (days of stock less than days to the next delivery), mostly parts from long-lead suppliers (Northgate, Meridian, Vector), because reorder points sized for launch volume fall behind a ramp that nearly doubles usage. Only 5 of Ridgeline's 8 parts are on the list when lateness is averaged. A measure that plans for a bad delivery (each supplier's 90th-percentile lateness, not the average) puts about half of Ridgeline's parts at risk against about 38% of the others, because its bad case is the week 9-11 crisis. The list is long either way, so the app ranks parts by days of cushion left and puts the most urgent first.
+- Supply risk at the extract: 15 of 40 parts are at risk or worse against the bad-case measure (14 with average lateness), 13 more are on watch, and 12 are fine. The three most urgent parts by cushion are all Ridgeline's. The risk list is driven by long-lead suppliers falling behind the ramp (reorder points sized for launch volume against usage that nearly doubles) as well as by Ridgeline's unreliability, so the app ranks parts by cushion and puts the most urgent first.
 
 ### What an analysis should be able to find
 
@@ -200,16 +200,49 @@ Guard checks (nothing planted; each should flag zero rows): status vs. end times
 
 ## Data quality checks
 
-25 checks, each one SQL file in `sql/checks/` with a severity, a category and a description. A check returns one row per offending record.
+26 checks, each one SQL file in `sql/checks/` with a severity, a category and a description. A check returns one row per offending record.
 
 | Category | Checks | Purpose |
 |---|---|---|
 | planted | 6 | One per planted error; scored against the answer key |
+| reconciliation | 1 | `stock_does_not_reconcile`: for each part, received minus used in drones minus in stock at the latest snapshot should be zero. It catches the over-receipts from the stock side, and also shows when a recorded quantity never physically arrived (and so should not be trusted). Scored against the answer key (the parts behind the over-received shipments) |
 | guard | 5 | Relationships nothing was planted into (status vs. end time, lot and serial references, finished goods passed test and are in time order); should flag nothing |
 | sanity | 13 | Standard validation rules (unknown part, station and supplier IDs; allowed values for status, result, attempt and location; duplicates; required fields; a passing inspection with a defect code); should flag nothing here |
 | operational | 1 | A warning, not a data error: shipments still in transit more than 3 days after their expected date; not scored |
 
-Scoring: for every scored check, rows flagged that are not in the answer key count as false positives, so a perfect run means every planted error caught and nothing else flagged. The answer key, the results per check and the flagged records are stored in the database (`dq_answer_key`, `dq_results`, `dq_flagged`) so the app can show them. Result on the default dataset: 38 of 38 planted errors caught, 0 missed, 0 false positives across 24 scored checks.
+Scoring: for every scored check, rows flagged that are not in the answer key count as false positives, so a perfect run means every planted error caught and nothing else flagged. The answer key, the results per check and the flagged records are stored in the database (`dq_answer_key`, `dq_results`, `dq_flagged`) so the app can show them. Result on the default dataset: 38 of 38 planted errors caught, 0 missed, 0 false positives across 25 scored checks (6 planted, 1 reconciliation, 5 guard, 13 sanity); the reconciliation check flags exactly the 3 parts behind the over-received shipments.
+
+## Clean views and metrics
+
+Every metric reads from the `clean_*` views, never from the raw tables. The clean layer applies one policy per kind of bad row:
+
+| Bad row | Treatment | Why |
+|---|---|---|
+| Re-keyed duplicate work order | Dropped; the earliest wo_id is kept | It is a second copy of the same job |
+| Job that ends before it starts | Kept, end time set to NULL (`end_unknown`) | It still started, so output counts stay right; dropping it would make the next station's wait stretch back over the missing row |
+| Inspection with no matching work order | Dropped | It cannot be tied to a drone |
+| Failure with no usable defect code | Kept, labelled `<station>-UNCODED` | The failure is real and must still count toward yield |
+| Negative stock reading | Replaced by the last good reading for that part and location | Keeps the daily history continuous; a negative first reading is dropped |
+| Over-received shipment | Kept, quantity capped at expected (`qty_capped`) | The arrival date is valid; the quantity is not. A capped shipment earns no in-full credit, because its true quantity is unknown and could have been short |
+
+Metrics (28 views in total; definitions are in the comments of `sql/metrics/`):
+
+| Metric | Definition |
+|---|---|
+| First-pass yield | Share of first-attempt inspections that pass, weekly by station |
+| Defect Pareto | First-attempt failures by defect code, with share and cumulative share |
+| Cycle time | End minus start of a completed job; median and 90th percentile by station |
+| Queue wait | Start of a job minus the end of the drone's previous station; elapsed time, so it includes nights and weekends |
+| Weekly output | Drones started at the first station and finished at the last, by week |
+| Supplier on-time-in-full | On time = received by the expected date; in full = at least the expected quantity. Pre-launch shipments are excluded. Lateness is 0 when early or on time |
+| Stock risk | Days of stock = stock / (BOM quantity x drones started in the last 14 days / 14). Days to arrival = days to the next open shipment (or the quoted lead time) + the supplier's 90th-percentile lateness (the average is shown for comparison). Cushion = days of stock - days to arrival; AT RISK when negative, WATCH under 5 |
+| Right part, wrong place | Weekday end-of-day snapshots where the warehouse holds at least one drone's worth and line-side holds less |
+| Lot quality | Per lot, the failure rate of the drones it went into at the station where it was installed, against that station's rate (lift) |
+| Recall scope | Per lot, every drone containing it and whether each has shipped, is packed, or is still in the line |
+| Lead time and dwell | Lead = first station start to shipped; dwell = passing Final Test to shipped; only shipped drones can be measured |
+| Work in progress | Drones not yet shipped, their age, and their stage (In a station, Waiting for the next station, or Awaiting shipment) |
+
+Two cautions that belong in any write-up. Lead time is only measurable for shipped drones, so recent weeks understate it. Lot-level failure rates can be inflated by other lots on the same drones: a regular lot that happened to go into the same drones as an emergency lot shows an elevated rate.
 
 ## Matching the IQME team description
 

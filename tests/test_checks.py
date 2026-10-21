@@ -20,9 +20,10 @@ def test_every_check_file_has_valid_headers_and_the_expected_mix():
     by_category = {}
     for c in CHECKS.values():
         by_category.setdefault(c.category, []).append(c.name)
-    assert {k: len(v) for k, v in by_category.items()} == {"planted": 6, "guard": 5, "sanity": 13, "operational": 1}
+    assert {k: len(v) for k, v in by_category.items()} == {"planted": 6, "reconciliation": 1, "guard": 5, "sanity": 13, "operational": 1}
     assert set(by_category["planted"]) == set(cfg.PLANTED_COUNTS)
     assert set(by_category["guard"]) == set(cfg.GUARD_CHECKS)
+    assert by_category["reconciliation"] == ["stock_does_not_reconcile"]
     assert CHECKS["overdue_open_shipments"].severity == "warn"
     assert all(c.severity == "error" for c in CHECKS.values() if c.category != "operational")
 
@@ -72,7 +73,8 @@ INSERT INTO raw_suppliers VALUES ('SUP-01', 'Acme');
 INSERT INTO raw_parts VALUES ('P1', 'Widget', 'SUP-01', 1.0, 5, 10);
 INSERT INTO raw_bom VALUES ('AAA', 'P1', 2);
 INSERT INTO raw_receiving VALUES ('S1', 'LOT-1', 'SUP-01', 'P1', '2026-02-01', '2026-02-11', '2026-02-11', 100, 100);
-INSERT INTO raw_inventory_snapshots VALUES ('2026-03-02', 'P1', 'WAREHOUSE', 10), ('2026-03-02', 'P1', 'LINE_SIDE', 5);
+-- 100 received, 4 installed in drones (2 drones x 2), so 96 must be in stock for the part to reconcile
+INSERT INTO raw_inventory_snapshots VALUES ('2026-03-02', 'P1', 'WAREHOUSE', 90), ('2026-03-02', 'P1', 'LINE_SIDE', 6);
 INSERT INTO raw_work_orders VALUES
   ('WO1', 'DF-000001', 'AAA', '2026-03-02 08:00', '2026-03-02 11:00', 'COMPLETE'),
   ('WO2', 'DF-000001', 'FNT', '2026-03-02 12:00', '2026-03-02 15:00', 'COMPLETE'),
@@ -89,7 +91,8 @@ INSERT INTO raw_finished_goods VALUES ('DF-000001', '2026-03-02 15:00', '2026-03
 # Every check is compared, so a case also proves no other check fires unless it is listed.
 CASES = {
     "negative_inventory": ("INSERT INTO raw_inventory_snapshots VALUES ('2026-03-03', 'P1', 'WAREHOUSE', -4)",
-                           {"negative_inventory": ["2026-03-03|P1|WAREHOUSE"]}),
+                           # 3 March is now the latest snapshot date and holds only this row, so stock no longer adds up
+                           {"negative_inventory": ["2026-03-03|P1|WAREHOUSE"], "stock_does_not_reconcile": ["P1"]}),
     "missing_defect_code_null": ("INSERT INTO raw_inspections VALUES ('I9', 'DF-000001', 'AAA', 1, '2026-03-02 12:00', 'FAIL', NULL)",
                                  {"missing_defect_code": ["I9"]}),
     "missing_defect_code_empty": ("INSERT INTO raw_inspections VALUES ('I9', 'DF-000001', 'AAA', 1, '2026-03-02 12:00', 'FAIL', '')",
@@ -101,7 +104,8 @@ CASES = {
     "orphan_wrong_station": ("INSERT INTO raw_inspections VALUES ('I9', 'DF-000002', 'FNT', 1, '2026-03-02 12:00', 'PASS', NULL)",
                              {"orphan_inspections": ["I9"]}),
     "over_receipt": ("INSERT INTO raw_receiving VALUES ('S2', 'LOT-2', 'SUP-01', 'P1', '2026-02-01', '2026-02-11', '2026-02-12', 100, 130)",
-                     {"over_receipt": ["S2"]}),
+                     # the 130 received never reached stock or drones, so the part no longer reconciles either
+                     {"over_receipt": ["S2"], "stock_does_not_reconcile": ["P1"]}),
     "duplicate_work_order": ("INSERT INTO raw_work_orders VALUES ('WO9', 'DF-000001', 'AAA', '2026-03-02 08:00', '2026-03-02 11:00', 'COMPLETE')",
                              {"duplicate_work_orders": ["WO9"]}),  # the copy, not the original WO1
     "two_copies_of_one_work_order": ("INSERT INTO raw_work_orders VALUES ('WO8', 'DF-000001', 'AAA', '2026-03-02 08:00', '2026-03-02 11:00', 'COMPLETE'), "
@@ -118,7 +122,8 @@ CASES = {
     "traceability_lot_not_in_receiving": ("INSERT INTO raw_drone_part_lots VALUES ('DF-000001', 'FNT', 'P1', 'LOT-X')",
                                           {"traceability_lot_not_in_receiving": ["LOT-X"]}),
     "traceability_serial_not_in_work_orders": ("INSERT INTO raw_drone_part_lots VALUES ('DF-777777', 'AAA', 'P1', 'LOT-1')",
-                                               {"traceability_serial_not_in_work_orders": ["DF-777777"]}),
+                                               # a drone that used 2 more of P1 than stock and receiving can explain
+                                               {"traceability_serial_not_in_work_orders": ["DF-777777"], "stock_does_not_reconcile": ["P1"]}),
     "finished_goods_without_a_passing_test": ("INSERT INTO raw_finished_goods VALUES ('DF-000002', '2026-03-02 10:00', '2026-03-02 11:00', NULL)",
                                               {"finished_goods_not_passed_final_test": ["DF-000002"]}),
     "finished_goods_packed_before_test": ("UPDATE raw_finished_goods SET packed_ts = '2026-03-02 14:00'",
@@ -131,7 +136,7 @@ CASES = {
                                {"receiving_unknown_part": ["S2"]}),
     "bom_unknown_part": ("INSERT INTO raw_bom VALUES ('AAA', 'P404', 1)", {"bom_unknown_part": ["AAA|P404"]}),
     "receiving_unknown_supplier": ("INSERT INTO raw_receiving VALUES ('S2', 'LOT-2', 'SUP-99', 'P1', '2026-02-01', '2026-02-11', '2026-02-11', 10, 10)",
-                                   {"receiving_unknown_supplier": ["S2"]}),
+                                   {"receiving_unknown_supplier": ["S2"], "stock_does_not_reconcile": ["P1"]}),  # 10 received, none in stock
     "parts_unknown_supplier": ("INSERT INTO raw_parts VALUES ('P2', 'Gadget', 'SUP-99', 1.0, 5, 10)", {"parts_unknown_supplier": ["P2"]}),
     "work_orders_unknown_station": ("INSERT INTO raw_work_orders VALUES ('WO9', 'DF-000001', 'ZZZ', '2026-03-02 13:00', '2026-03-02 14:00', 'COMPLETE')",
                                     {"work_orders_unknown_station": ["WO9"]}),
@@ -145,15 +150,28 @@ CASES = {
     "invalid_inspection_attempt": ("INSERT INTO raw_inspections VALUES ('I9', 'DF-000001', 'AAA', 3, '2026-03-02 12:00', 'PASS', NULL)",
                                    {"invalid_inspection_values": ["I9"]}),
     "invalid_inventory_location": ("INSERT INTO raw_inventory_snapshots VALUES ('2026-03-03', 'P1', 'YARD', 4)",
-                                   {"invalid_inventory_location": ["2026-03-03|P1|YARD"]}),
+                                   # the newest snapshot date now holds only this row
+                                   {"invalid_inventory_location": ["2026-03-03|P1|YARD"], "stock_does_not_reconcile": ["P1"]}),
     "pass_with_defect_code": ("INSERT INTO raw_inspections VALUES ('I9', 'DF-000001', 'AAA', 1, '2026-03-02 12:00', 'PASS', 'AAA-X')",
                               {"pass_with_defect_code": ["I9"]}),
     "duplicate_inventory_snapshots": ("INSERT INTO raw_inventory_snapshots VALUES ('2026-03-02', 'P1', 'WAREHOUSE', 10)",
-                                      {"duplicate_inventory_snapshots": ["2026-03-02|P1|WAREHOUSE"]}),
+                                      # the part is double counted, so stock is 10 too high
+                                      {"duplicate_inventory_snapshots": ["2026-03-02|P1|WAREHOUSE"], "stock_does_not_reconcile": ["P1"]}),
     "work_orders_missing_required": ("INSERT INTO raw_work_orders VALUES ('WO9', NULL, 'AAA', '2026-03-02 10:00', NULL, 'IN_PROGRESS')",
                                      {"work_orders_missing_required": ["WO9|(no serial)"]}),
     "receiving_missing_required": ("INSERT INTO raw_receiving VALUES ('S2', NULL, 'SUP-01', 'P1', '2026-02-01', '2026-02-11', '2026-02-11', 10, 10)",
-                                   {"receiving_missing_required": ["S2|P1"]}),
+                                   {"receiving_missing_required": ["S2|P1"], "stock_does_not_reconcile": ["P1"]}),  # 10 received, none in stock
+    # --- the reconciliation check itself ---
+    "reconcile_more_received_than_accounted_for": ("INSERT INTO raw_receiving VALUES ('S2', 'LOT-2', 'SUP-01', 'P1', '2026-02-01', '2026-02-11', '2026-02-11', 10, 10)",
+                                                   {"stock_does_not_reconcile": ["P1"]}),
+    "reconcile_more_used_than_received": ("INSERT INTO raw_drone_part_lots VALUES ('DF-000001', 'AAA', 'P1', 'LOT-1')",
+                                          {"stock_does_not_reconcile": ["P1"]}),
+    "reconcile_a_matching_change_in_receiving_and_stock_is_fine": (
+        "INSERT INTO raw_receiving VALUES ('S2', 'LOT-2', 'SUP-01', 'P1', '2026-02-01', '2026-02-11', '2026-02-11', 10, 10); "
+        "UPDATE raw_inventory_snapshots SET on_hand = 16 WHERE part_id = 'P1' AND location = 'LINE_SIDE'", {}),
+    "reconcile_a_shipment_still_in_transit_is_not_stock": (
+        "INSERT INTO raw_receiving VALUES ('S2', 'LOT-2', 'SUP-01', 'P1', '2026-03-01', '2026-03-02', NULL, 10, NULL)", {}),
+    "reconcile_a_part_with_no_records_is_balanced": ("INSERT INTO raw_parts VALUES ('P2', 'Gadget', 'SUP-01', 1.0, 5, 10)", {}),
     "overdue_open_shipment": ("INSERT INTO raw_receiving VALUES ('S2', 'LOT-2', 'SUP-01', 'P1', '2026-02-01', '2026-02-20', NULL, 10, NULL)",
                               {"overdue_open_shipments": ["S2"]}),
     "recent_open_shipment_is_not_overdue": ("INSERT INTO raw_receiving VALUES ('S2', 'LOT-2', 'SUP-01', 'P1', '2026-02-20', '2026-03-01', NULL, 10, NULL)", {}),
@@ -214,8 +232,12 @@ def test_every_planted_error_is_caught_with_no_false_positives(test_url):
 def test_results_and_the_answer_key_are_stored_in_the_database(test_url):
     data = build(url=test_url, write_files=False)
     with connect(test_url) as conn:
-        assert conn.execute("SELECT COUNT(*) FROM dq_results").fetchone()[0] == 25
-        assert conn.execute("SELECT COUNT(*) FROM dq_answer_key").fetchone()[0] == sum(cfg.PLANTED_COUNTS.values())
+        assert conn.execute("SELECT COUNT(*) FROM dq_results").fetchone()[0] == 26
+        assert conn.execute("SELECT COUNT(*) FROM dq_answer_key").fetchone()[0] == sum(len(v) for v in data.answer_key.values())
+        stored = {r[0] for r in conn.execute("SELECT record_key FROM dq_answer_key WHERE check_name = 'stock_does_not_reconcile'").fetchall()}
+        receiving = data.tables["receiving"]
+        parts_behind_the_over_receipts = set(receiving.loc[receiving["shipment_id"].isin(data.answer_key["over_receipt"]), "part_id"])
+        assert stored == parts_behind_the_over_receipts and len(stored) >= 1
         assert conn.execute("SELECT SUM(caught) FROM dq_results WHERE category = 'planted'").fetchone()[0] == sum(cfg.PLANTED_COUNTS.values())
         assert conn.execute("SELECT COUNT(*) FROM dq_flagged").fetchone()[0] == sum(len(v) for v in data.answer_key.values())
 

@@ -47,6 +47,18 @@ def apply_schema(conn: psycopg.Connection) -> None:
     conn.commit()
 
 
+def apply_views(conn: psycopg.Connection) -> None:
+    """Drop and rebuild the clean and metric views (clean_*, v_*), in file-name order."""
+    names = [n for (n,) in conn.execute(
+        "SELECT viewname FROM pg_views WHERE schemaname = 'public' AND (viewname LIKE 'clean\\_%' OR viewname LIKE 'v\\_%')"
+    ).fetchall()]
+    for name in names:
+        conn.execute(f'DROP VIEW IF EXISTS "{name}" CASCADE')
+    for path in sorted((ROOT / "sql" / "metrics").glob("*.sql")):
+        conn.execute(path.read_text())
+    conn.commit()
+
+
 def _copy_dataframe(conn: psycopg.Connection, table: str, df: pd.DataFrame) -> int:
     columns = ", ".join(df.columns)
     rows = df.astype(object).where(df.notna(), None)  # NaN, NaT and pd.NA become NULL
