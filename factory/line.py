@@ -46,6 +46,16 @@ def work_minute_to_datetime(minute: float) -> datetime:
     return datetime(day.year, day.month, day.day, cfg.SHIFT_START_HOUR) + timedelta(minutes=within_day)
 
 
+def datetime_to_work_minute(ts: datetime) -> int:
+    """The inverse of work_minute_to_datetime, for a time inside a weekday shift."""
+    days = (ts.date() - cfg.START).days
+    week_offset, weekday = divmod(days, 7)
+    if weekday >= cfg.WORK_DAYS:
+        raise ValueError(f"{ts} is not on a working day")
+    shift_start = datetime(ts.year, ts.month, ts.day, cfg.SHIFT_START_HOUR)
+    return (week_offset * cfg.WORK_DAYS + weekday) * cfg.SHIFT_MIN + round((ts - shift_start).total_seconds() / 60)
+
+
 def week_of(minute: float) -> int:
     return int(minute // cfg.WEEK_MIN) + 1
 

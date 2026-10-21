@@ -61,6 +61,10 @@ def weekly_releases(week: int) -> int:
     return round(value)
 
 
+# --- Packing and shipping ---------------------------------------------------
+PACK_HOURS = (4, 24)  # working hours from passing Final Test to being packed (random in this range)
+SHIP_BATCH_HOUR = 16  # one batch each weekday; everything packed by this time ships that day
+
 # --- Defects ----------------------------------------------------------------
 DEFECT_NAMES = {
     "AFL": ["DELAMINATION", "RESIN-VOID", "FIBRE-WRINKLE"],
