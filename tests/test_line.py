@@ -5,7 +5,8 @@ import pandas as pd
 import pytest
 
 from factory import config as cfg
-from factory.line import AS_OF, simulate_line, weekly_releases
+from factory.dimensions import part_ids
+from factory.line import AS_OF, LAST_DAY, simulate_line, weekly_releases
 
 START = pd.Timestamp(cfg.START)
 
@@ -75,24 +76,6 @@ def test_inspections_are_consistent(line):
     assert set(zip(second["serial_number"], second["station_code"])) <= failed
 
 
-def test_substitute_lot_only_in_spike_weeks_and_causes_the_spike(line):
-    mtr_start = line.work_orders[line.work_orders["station_code"] == cfg.SPIKE_STATION]
-    mtr_start = mtr_start.assign(week=week(mtr_start["start_ts"])).merge(line.drones, on="serial_number")
-    in_window = mtr_start["week"].isin(cfg.SPIKE_WEEKS)
-    assert not mtr_start.loc[~in_window, "carries_substitute_lot"].any()
-    share = mtr_start.loc[in_window, "carries_substitute_lot"].mean()
-    assert 0.5 < share < 0.9
-
-    first = line.inspections[(line.inspections["attempt"] == 1) & (line.inspections["station_code"] == cfg.SPIKE_STATION)]
-    first = first.merge(line.drones, on="serial_number")
-    first = first[week(first["inspected_ts"]).isin(cfg.SPIKE_WEEKS)]
-    fail = first.groupby("carries_substitute_lot")["result"].apply(lambda s: (s == "FAIL").mean())
-    assert fail[True] > 3 * fail[False]
-
-    spike_fails = line.inspections[line.inspections["defect_code"] == cfg.SPIKE_DEFECT]
-    assert len(spike_fails) > 10
-
-
 def test_avionics_is_the_bottleneck_and_its_queue_grows(line):
     order = {s.code: i for i, s in enumerate(cfg.STATIONS)}
     wo = line.work_orders.assign(seq=lambda d: d["station_code"].map(order)).sort_values(["serial_number", "seq"])
@@ -104,3 +87,98 @@ def test_avionics_is_the_bottleneck_and_its_queue_grows(line):
     assert early < 24  # healthy at launch
     assert late > 5 * early  # grows as releases outrun capacity
     assert avn[avn["week"] >= 20]["wait_h"].mean() > 5 * others[others["week"] >= 20]["wait_h"].mean()
+
+
+# ---------------------------------------------------------------------------- the coupled supply chain
+
+FASTENERS = [pid for pid, part in zip(part_ids(), cfg.PARTS) if part.name in cfg.SPIKE_FASTENERS]
+
+
+def sub_lot_drones(line):
+    """Serials whose Motor & Prop fasteners include an emergency (spot-buy) lot, from the traceability table."""
+    lots = line.drone_part_lots
+    used = lots[lots["part_id"].isin(FASTENERS)]
+    return set(used.loc[used["lot_id"].str.startswith(cfg.SUBSTITUTE_LOT_PREFIX), "serial_number"])
+
+
+def test_substitute_flag_matches_the_traceability_table(line):
+    flagged = set(line.drones.loc[line.drones["carries_substitute_lot"], "serial_number"])
+    assert flagged == sub_lot_drones(line) and len(flagged) > 10
+
+
+def test_the_spike_is_caused_by_the_substitute_lot(line):
+    first = line.inspections[(line.inspections["attempt"] == 1) & (line.inspections["station_code"] == cfg.SPIKE_STATION)]
+    on_sub = first["serial_number"].isin(sub_lot_drones(line))
+    fail = first["result"].eq("FAIL")
+    assert fail[on_sub].mean() > 3 * fail[~on_sub].mean()
+    assert fail[on_sub].mean() == pytest.approx(cfg.SUBSTITUTE_FAIL_RATE, abs=0.08)
+    spike_code = first[on_sub & fail]["defect_code"].eq(cfg.SPIKE_DEFECT)
+    assert spike_code.mean() > 0.5
+
+
+def test_the_spike_follows_the_shortage_not_a_calendar(line):
+    """No drone gets a substitute fastener before the first emergency lot has actually been received."""
+    rec = line.receiving
+    spot = rec[(rec["supplier_id"] == cfg.SPOT_BUY) & rec["part_id"].isin(FASTENERS) & rec["received_date"].notna()]
+    first_received = pd.Timestamp(spot["received_date"].min())
+    mtr = line.work_orders[line.work_orders["station_code"] == cfg.SPIKE_STATION].set_index("serial_number")["start_ts"]
+    starts = mtr.reindex(sorted(sub_lot_drones(line)))
+    assert (starts >= first_received).all()
+    # ...and the first emergency buy comes after Ridgeline's disruption began, not before.
+    first_order_week = int(week(pd.Series(pd.to_datetime(spot["order_date"])).iloc[[spot["order_date"].argmin()]]).iloc[0])
+    assert min(cfg.RIDGELINE_DISRUPTION_WEEKS) <= first_order_week <= max(cfg.RIDGELINE_DISRUPTION_WEEKS) + 4
+
+
+def test_only_ridgeline_parts_are_ever_bought_from_the_spot_distributor(line):
+    rec = line.receiving
+    spot_parts = set(rec.loc[rec["supplier_id"] == cfg.SPOT_BUY, "part_id"])
+    ridgeline_parts = {pid for pid, part in zip(part_ids(), cfg.PARTS) if part.supplier_id == cfg.RIDGELINE}
+    assert spot_parts and spot_parts <= ridgeline_parts
+
+
+def test_every_traced_lot_has_a_receiving_row_and_every_started_job_is_traced(line):
+    lots = line.drone_part_lots
+    assert set(lots["lot_id"]) <= set(line.receiving["lot_id"])
+    per_job = lots.groupby(["serial_number", "station_code"]).size()
+    started = line.work_orders.groupby(["serial_number", "station_code"]).size()
+    assert set(per_job.index) == set(started.index)
+    assert (per_job == 8).all()  # eight parts per station
+
+
+def test_stock_is_conserved_for_every_part(line):
+    """Everything received is either installed in a drone, in the warehouse, or on the shelf at the end."""
+    bom = {pid: part.qty_per_drone for pid, part in zip(part_ids(), cfg.PARTS)}
+    installed = line.drone_part_lots.groupby("part_id").size() * pd.Series(bom)
+    received = line.receiving.dropna(subset=["received_date"]).groupby("part_id")["qty_received"].sum()
+    snap = line.inventory_snapshots
+    on_hand = snap[snap["snapshot_date"] == LAST_DAY].groupby("part_id")["on_hand"].sum()
+    for pid in bom:
+        assert received[pid] == installed.get(pid, 0) + on_hand[pid], pid
+
+
+def test_snapshots_cover_every_part_location_and_day_with_no_negative_stock(line):
+    snap = line.inventory_snapshots
+    days = (LAST_DAY - cfg.START).days + 1
+    assert len(snap) == 40 * 2 * days
+    assert snap["on_hand"].min() >= 0
+    assert set(snap["location"]) == {"WAREHOUSE", "LINE_SIDE"}
+
+
+def test_the_line_stays_healthy_outside_the_story(line):
+    released = len(line.drones)
+    finished = int((line.work_orders["station_code"] == "FNT").sum())
+    assert finished > 0.8 * released  # shortages delay work; they do not strangle the line
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2, 3])
+def test_the_story_does_not_depend_on_one_lucky_seed(seed):
+    other = simulate_line(np.random.default_rng(seed))
+    drones = sub_lot_drones(other)
+    rec = other.receiving
+    spot = rec[(rec["supplier_id"] == cfg.SPOT_BUY) & rec["part_id"].isin(FASTENERS)]
+    first_week = int(week(pd.to_datetime(spot["order_date"])).min())
+    assert min(cfg.RIDGELINE_DISRUPTION_WEEKS) <= first_week <= max(cfg.RIDGELINE_DISRUPTION_WEEKS) + 4
+    assert len(drones) >= 20
+    first = other.inspections[(other.inspections["attempt"] == 1) & (other.inspections["station_code"] == cfg.SPIKE_STATION)]
+    on_sub, fail = first["serial_number"].isin(drones), first["result"].eq("FAIL")
+    assert fail[on_sub].mean() > 3 * fail[~on_sub].mean()

@@ -44,6 +44,7 @@ DROP TABLE IF EXISTS raw_receiving;
 CREATE TABLE raw_receiving (
     shipment_id    VARCHAR,
     lot_id         VARCHAR,    -- each shipment is one supplier lot
+    supplier_id    VARCHAR,    -- who shipped it (a spot-buy distributor for emergency buys)
     part_id        VARCHAR,
     order_date     DATE,
     expected_date  DATE,

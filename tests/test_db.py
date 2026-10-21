@@ -44,6 +44,7 @@ def test_load_handles_nullable_integers_and_dates(conn):
     df = pd.DataFrame({
         "shipment_id": ["SHP-1", "SHP-2"],
         "lot_id": ["LOT-1", "LOT-2"],
+        "supplier_id": ["SUP-01", "SUP-01"],
         "part_id": ["MTR-003", "MTR-003"],
         "order_date": pd.to_datetime(["2026-02-01", "2026-02-10"]).date,
         "expected_date": pd.to_datetime(["2026-02-11", "2026-02-20"]).date,
@@ -70,7 +71,7 @@ SAMPLE_ROWS = {
     "bom": {"station_code": "MTR", "part_id": "MTR-003", "qty_per_unit": 2},
     "inventory_snapshots": {"snapshot_date": datetime(2026, 1, 5).date(), "part_id": "MTR-003",
                             "location": "LINE_SIDE", "on_hand": 120},
-    "receiving": {"shipment_id": "SHP-1", "lot_id": "LOT-1", "part_id": "MTR-003",
+    "receiving": {"shipment_id": "SHP-1", "lot_id": "LOT-1", "supplier_id": "SUP-01", "part_id": "MTR-003",
                   "order_date": datetime(2026, 1, 1).date(), "expected_date": datetime(2026, 1, 11).date(),
                   "received_date": None, "qty_expected": 500, "qty_received": None},
     "work_orders": {"wo_id": "WO-1", "serial_number": "DF-000001", "station_code": "AFL",
