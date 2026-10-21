@@ -1,0 +1,21 @@
+# Colours come from the validated palette in factory/viz/theme.py.
+[theme]
+primaryColor = "#2a78d6"
+font = "sans serif"
+
+[theme.light]
+backgroundColor = "#fcfcfb"
+secondaryBackgroundColor = "#f9f9f7"
+textColor = "#0b0b0b"
+
+[theme.dark]
+primaryColor = "#3987e5"
+backgroundColor = "#1a1a19"
+secondaryBackgroundColor = "#0d0d0d"
+textColor = "#f0efec"
+
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false

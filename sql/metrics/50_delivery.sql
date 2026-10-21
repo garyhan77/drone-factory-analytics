@@ -34,7 +34,7 @@ GROUP BY 1;
 -- Drones that have started but not shipped, how long they have been in the line, and where they are now:
 --   In <station>          the latest job has started and has not finished
 --   Waiting for <station> the latest job is done and the next station has not started it (queued)
---   AWAITING SHIPMENT     passed Final Test, packed or being packed, not yet shipped
+--   Awaiting shipment     passed Final Test, packed or being packed, not yet shipped
 CREATE OR REPLACE VIEW v_wip_age AS
 WITH latest_job AS (
     SELECT DISTINCT ON (w.serial_number)
@@ -51,7 +51,7 @@ SELECT
     fs.first_start,
     ROUND((EXTRACT(EPOCH FROM ((SELECT as_of_ts FROM v_calendar) - fs.first_start)) / 86400.0)::numeric, 1) AS age_days,
     CASE
-        WHEN f.serial_number IS NOT NULL THEN 'AWAITING SHIPMENT'
+        WHEN f.serial_number IS NOT NULL THEN 'Awaiting shipment'
         WHEN j.end_ts IS NULL AND NOT j.end_unknown THEN 'In ' || j.station_name  -- started, not finished
         ELSE 'Waiting for ' || COALESCE(nxt.station_name, 'shipping')
     END AS stage

@@ -206,9 +206,9 @@ def test_lead_time_and_dwell_for_shipped_drones_and_the_age_of_the_rest(tiny):
     # As of 9 March 11:00: D2 is packed and waiting (7 days 2 hours old); D3 is part-way through BBB (3 hours);
     # D4 finished AAA and is queued for BBB (2 hours).
     assert rows(tiny, "SELECT serial_number, stage, age_days FROM v_wip_age ORDER BY 1") == [
-        ("D2", "AWAITING SHIPMENT", 7.1), ("D3", "In Beta", 0.1), ("D4", "Waiting for Beta", 0.1)]
+        ("D2", "Awaiting shipment", 7.1), ("D3", "In Beta", 0.1), ("D4", "Waiting for Beta", 0.1)]
     assert rows(tiny, "SELECT stage, drones, avg_age_days, max_age_days FROM v_wip_by_stage ORDER BY 1") == [
-        ("AWAITING SHIPMENT", 1, 7.1, 7.1), ("In Beta", 1, 0.1, 0.1), ("Waiting for Beta", 1, 0.1, 0.1)]
+        ("Awaiting shipment", 1, 7.1, 7.1), ("In Beta", 1, 0.1, 0.1), ("Waiting for Beta", 1, 0.1, 0.1)]
 
 
 # ---------------------------------------------------------------------------- part 2: what the clean views do

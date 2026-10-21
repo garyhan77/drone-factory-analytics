@@ -1,6 +1,6 @@
 PY := .venv/bin/python
 
-.PHONY: setup schema views build checks test
+.PHONY: setup schema views build checks run test
 
 setup:
 	python3 -m venv .venv
@@ -17,6 +17,9 @@ build:
 
 checks:
 	$(PY) -m factory.checks
+
+run:
+	.venv/bin/streamlit run app/Home.py
 
 test:
 	$(PY) -m pytest -q
