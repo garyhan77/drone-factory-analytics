@@ -198,6 +198,19 @@ Not planted: unknown part in receiving (same pattern as orphan inspections).
 
 Guard checks (nothing planted; each should flag zero rows): status vs. end timestamp on work orders; every `lot_id` in `drone_part_lots` exists in `receiving`; every serial in `drone_part_lots` exists in `work_orders`; every drone in `finished_goods` has a passing Final Test inspection; test passed <= packed <= shipped.
 
+## Data quality checks
+
+25 checks, each one SQL file in `sql/checks/` with a severity, a category and a description. A check returns one row per offending record.
+
+| Category | Checks | Purpose |
+|---|---|---|
+| planted | 6 | One per planted error; scored against the answer key |
+| guard | 5 | Relationships nothing was planted into (status vs. end time, lot and serial references, finished goods passed test and are in time order); should flag nothing |
+| sanity | 13 | Standard validation rules (unknown part, station and supplier IDs; allowed values for status, result, attempt and location; duplicates; required fields; a passing inspection with a defect code); should flag nothing here |
+| operational | 1 | A warning, not a data error: shipments still in transit more than 3 days after their expected date; not scored |
+
+Scoring: for every scored check, rows flagged that are not in the answer key count as false positives, so a perfect run means every planted error caught and nothing else flagged. The answer key, the results per check and the flagged records are stored in the database (`dq_answer_key`, `dq_results`, `dq_flagged`) so the app can show them. Result on the default dataset: 38 of 38 planted errors caught, 0 missed, 0 false positives across 24 scored checks.
+
 ## Matching the IQME team description
 
 The project is meant to cover what the posting says the team does. This is how each part is covered.

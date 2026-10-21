@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "sql" / "schema.sql"
+DQ_SCHEMA_PATH = ROOT / "sql" / "dq_schema.sql"
 
 # Every raw table, in the order the generator will fill them.
 TABLES = [
@@ -26,6 +27,9 @@ TABLES = [
 ]
 
 
+DQ_TABLES = ["dq_answer_key", "dq_flagged", "dq_results"]
+
+
 def connect(url: str | None = None) -> psycopg.Connection:
     """Open a connection. Uses DATABASE_URL from the environment or .env if no url is given."""
     if url is None:
@@ -37,23 +41,35 @@ def connect(url: str | None = None) -> psycopg.Connection:
 
 
 def apply_schema(conn: psycopg.Connection) -> None:
-    """Drop and recreate every raw table. Existing data in those tables is lost."""
+    """Drop and recreate every raw table and data quality table. Existing data in them is lost."""
     conn.execute(SCHEMA_PATH.read_text())
+    conn.execute(DQ_SCHEMA_PATH.read_text())
     conn.commit()
+
+
+def _copy_dataframe(conn: psycopg.Connection, table: str, df: pd.DataFrame) -> int:
+    columns = ", ".join(df.columns)
+    rows = df.astype(object).where(df.notna(), None)  # NaN, NaT and pd.NA become NULL
+    with conn.cursor() as cur:
+        with cur.copy(f"COPY {table} ({columns}) FROM STDIN") as copy:
+            for row in rows.itertuples(index=False, name=None):
+                copy.write_row(row)
+    conn.commit()
+    return len(df)
 
 
 def load_dataframe(conn: psycopg.Connection, table: str, df: pd.DataFrame) -> int:
     """Bulk-load a DataFrame into raw_<table> with COPY. Returns the number of rows loaded."""
     if table not in TABLES:
         raise ValueError(f"Unknown table: {table!r}")
-    columns = ", ".join(df.columns)
-    rows = df.astype(object).where(df.notna(), None)  # NaN, NaT and pd.NA become NULL
-    with conn.cursor() as cur:
-        with cur.copy(f"COPY raw_{table} ({columns}) FROM STDIN") as copy:
-            for row in rows.itertuples(index=False, name=None):
-                copy.write_row(row)
-    conn.commit()
-    return len(df)
+    return _copy_dataframe(conn, f"raw_{table}", df)
+
+
+def load_dq_table(conn: psycopg.Connection, table: str, df: pd.DataFrame) -> int:
+    """Bulk-load a DataFrame into one of the data quality tables (dq_answer_key, dq_flagged, dq_results)."""
+    if table not in DQ_TABLES:
+        raise ValueError(f"Unknown data quality table: {table!r}")
+    return _copy_dataframe(conn, table, df)
 
 
 def load_all(conn: psycopg.Connection, frames: dict[str, pd.DataFrame]) -> dict[str, int]:

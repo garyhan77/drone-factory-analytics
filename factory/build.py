@@ -10,6 +10,7 @@ import argparse
 import json
 
 from factory import config as cfg
+from factory.checks import check_database, store_answer_key
 from factory.db import ROOT, apply_schema, connect, load_all
 from factory.generate import Generated, generate
 
@@ -21,6 +22,8 @@ def build(url: str | None = None, seed: int = cfg.SEED, write_files: bool = True
     with connect(url) as conn:
         apply_schema(conn)
         load_all(conn, data.tables)
+        store_answer_key(conn, data.answer_key)
+        data.results = check_database(conn)
     if write_files:
         DATA_DIR.mkdir(exist_ok=True)
         (DATA_DIR / "answer_key.json").write_text(json.dumps({
