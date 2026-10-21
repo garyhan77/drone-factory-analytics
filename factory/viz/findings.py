@@ -139,3 +139,29 @@ def inventory_finding(risk: pd.DataFrame, perf: pd.DataFrame, gap: pd.DataFrame,
             f"**Right part, wrong place.** {len(gap)} parts were short at the line on at least one weekday while the warehouse "
             f"held enough for a drone. The worst is {top['part_name']} at {top['station_name']}, short on {int(top['days_short_at_line'])} weekdays.")
     return out
+
+
+# ---------------------------------------------------------------------------- Data Quality
+
+SCORED_CATEGORIES = ("planted", "reconciliation", "guard", "sanity")
+CATEGORY_NAMES = {"planted": "Planted error", "reconciliation": "Reconciliation", "guard": "Guard", "sanity": "Sanity",
+                  "operational": "Operational warning"}
+
+
+def data_quality_finding(results: pd.DataFrame, impact: pd.DataFrame) -> list[str]:
+    """How well the checks did against the planted errors, and how much the cleaning touched."""
+    out = []
+    scored = results[results["category"].isin(SCORED_CATEGORIES)]
+    planted = results[results["category"] == "planted"]
+    if len(planted):
+        out.append(
+            f"**{int(planted['caught'].sum())} of {int(planted['planted_rows'].sum())} planted errors were caught**, with "
+            f"{int(scored['missed'].sum())} missed and {int(scored['false_positives'].sum())} false positives across "
+            f"{len(scored)} scored checks.")
+    if len(impact):
+        dropped = int((impact["raw_rows"] - impact["clean_rows"]).sum())
+        kept = int(impact["changed"].sum())
+        out.append(
+            f"**{dropped + kept} rows were dropped, repaired or relabelled before any metric was computed**: {dropped} dropped "
+            f"and {kept} kept with a fix, so the numbers on the other pages never see the raw errors.")
+    return out

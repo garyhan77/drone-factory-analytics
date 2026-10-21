@@ -226,3 +226,28 @@ def stock_history_chart(df, pal: Palette) -> go.Figure:
     style(fig, pal, height=320, legend=True)
     fig.update_yaxes(title_text="Units on hand at the end of the day", rangemode="tozero")
     return fig
+
+
+# ---------------------------------------------------------------------------- Data Quality
+
+from .theme import STATUS  # noqa: E402
+
+
+def detection_chart(df, pal: Palette) -> go.Figure:
+    """For each planted error type: how many of its rows the checks caught. Anything missed is stacked in the critical colour."""
+    df = df.reset_index(drop=True)
+    fig = go.Figure(go.Bar(
+        y=df["label"], x=df["caught"], name="Caught", orientation="h", marker=dict(color=pal.accent, cornerradius=CORNER_RADIUS),
+        hovertemplate="%{y}: %{x} caught<extra></extra>"))
+    if (df["missed"] > 0).any():
+        fig.add_trace(go.Bar(
+            y=df["label"], x=df["missed"], name="✕ Missed", orientation="h",
+            marker=dict(color=STATUS["critical"], cornerradius=CORNER_RADIUS), hovertemplate="%{y}: %{x} missed<extra></extra>"))
+    style(fig, pal, height=horizontal_bar_height(len(df), extra=48), legend=len(fig.data) >= 2, hovermode="closest")
+    fig.update_layout(bargap=bar_gap(), barmode="stack", margin=dict(l=8, r=120, t=36 if len(fig.data) >= 2 else 12, b=8))
+    fig.update_yaxes(categoryorder="array", categoryarray=list(df["label"]), autorange="reversed", showgrid=False)
+    fig.update_xaxes(showgrid=False, showticklabels=False, showline=False, range=[0, float(df["planted_rows"].max()) * 1.05])
+    for _, row in df.iterrows():  # one selective label per bar, outside its end: "12 of 12 caught"
+        fig.add_annotation(x=row["planted_rows"], y=row["label"], text=f"{int(row['caught'])} of {int(row['planted_rows'])} caught",
+                           showarrow=False, xanchor="left", xshift=8, font=dict(color=pal.ink_secondary, size=13))
+    return fig
