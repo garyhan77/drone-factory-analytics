@@ -1,0 +1,3 @@
+# Everything for building the data and running the tests locally.
+-r requirements.txt
+pytest==9.1.1

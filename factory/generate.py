@@ -24,6 +24,7 @@ class Generated:
     answer_key: dict[str, list[str]]  # check name -> record keys that were corrupted
     windows: Windows
     results: pd.DataFrame | None = None  # data quality results, filled in by factory.build
+    target: str | None = None  # "host/database" the data was loaded into, filled in by factory.build (never the password)
 
 
 def generate(seed: int = cfg.SEED) -> Generated:

@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 import psycopg
 from dotenv import load_dotenv
+from psycopg import sql
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "sql" / "schema.sql"
@@ -40,8 +41,26 @@ def connect(url: str | None = None) -> psycopg.Connection:
     return psycopg.connect(url)
 
 
-def apply_schema(conn: psycopg.Connection) -> None:
-    """Drop and recreate every raw table and data quality table. Existing data in them is lost."""
+LOCAL_HOSTS = {"", "localhost", "127.0.0.1", "::1"}
+
+
+def is_remote_host(host: str | None) -> bool:
+    """True unless the host is this machine (localhost, a loopback address, or a unix socket path)."""
+    host = (host or "").strip().lower()
+    return not (host in LOCAL_HOSTS or host.startswith("/"))
+
+
+def apply_schema(conn: psycopg.Connection, *, allow_remote: bool = False) -> None:
+    """Drop and recreate every raw table and data quality table. Existing data in them is lost.
+
+    Refuses to run against a database on another machine unless allow_remote is set, so a hosted database
+    can never be wiped by accident (for example by running `make build` with the wrong DATABASE_URL).
+    """
+    host = conn.info.host
+    if is_remote_host(host) and not allow_remote:
+        raise RuntimeError(
+            f"Refusing to drop and recreate tables on a remote database ({host}). "
+            "If that is what you want, pass allow_remote=True (the build command's --remote flag).")
     conn.execute(SCHEMA_PATH.read_text())
     conn.execute(DQ_SCHEMA_PATH.read_text())
     conn.commit()
@@ -56,6 +75,17 @@ def apply_views(conn: psycopg.Connection) -> None:
         conn.execute(f'DROP VIEW IF EXISTS "{name}" CASCADE')
     for path in sorted((ROOT / "sql" / "metrics").glob("*.sql")):
         conn.execute(path.read_text())
+    conn.commit()
+
+
+def apply_grants(conn: psycopg.Connection, role: str) -> None:
+    """Let a read-only role read every table and view. Run after the tables and views are (re)created.
+
+    Tables are dropped and recreated on each build, which discards their privileges, so this is repeated every time.
+    """
+    who = sql.Identifier(role)
+    conn.execute(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(who))
+    conn.execute(sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA public TO {}").format(who))
     conn.commit()
 
 
