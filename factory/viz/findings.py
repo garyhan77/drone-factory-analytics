@@ -34,3 +34,72 @@ def production_finding(summary: pd.DataFrame, output: pd.DataFrame, wip: pd.Data
         + (f", and {int(waiting.iloc[0])} drones are now queued for {top['station_name']}." if len(waiting) else ".")
     )
     return [first, second_sentence]
+
+
+# ---------------------------------------------------------------------------- Quality & Traceability
+
+MIN_WEEKLY_INSPECTIONS = 10  # a week with fewer inspections is too small to call a dip
+Z_THRESHOLD = 3.0  # a dip counts only if it is this many standard errors below the station's overall rate
+LOT_MIN_DRONES = 10  # a lot is judged only once at least this many of its drones have been inspected
+LOT_MIN_LIFT = 3.0  # ...and flagged when its failure rate is at least this many times its station's
+
+
+def _day(d) -> str:
+    return f"{d.day} {d:%B}"
+
+
+def station_yield_summary(weekly: pd.DataFrame) -> pd.DataFrame:
+    """Per station: overall yield and its most surprising weak week.
+
+    A week is judged against how far a week of that size could wobble by chance (a z-score: the gap to the overall
+    rate divided by sqrt(p(1-p)/n)). Ranking by raw gap would mostly surface small, noisy weeks.
+    """
+    rows = []
+    for (code, name), grp in weekly.groupby(["station_code", "station_name"]):
+        overall = grp["passes"].sum() / grp["inspections"].sum()
+        big = grp[grp["inspections"] >= MIN_WEEKLY_INSPECTIONS].copy()
+        if big.empty or not 0 < overall < 1:
+            continue
+        big["z"] = (big["fpy"].astype(float) - overall) / (overall * (1 - overall) / big["inspections"]) ** 0.5
+        worst = big.loc[big["z"].idxmin()]
+        rows.append({"station_code": code, "station_name": name, "overall": overall, "worst_week": worst["week_start"],
+                     "worst_fpy": float(worst["fpy"]), "worst_n": int(worst["inspections"]), "z": float(worst["z"])})
+    return pd.DataFrame(rows, columns=["station_code", "station_name", "overall", "worst_week", "worst_fpy", "worst_n", "z"])
+
+
+def flagged_lots(lots: pd.DataFrame) -> pd.DataFrame:
+    """Lots that stand out: enough drones inspected, and a failure rate well above their station's."""
+    keep = lots[(lots["drones_inspected"] >= LOT_MIN_DRONES) & (lots["lift"] >= LOT_MIN_LIFT)]
+    return keep.sort_values("lift", ascending=False)
+
+
+def quality_finding(weekly: pd.DataFrame, lots: pd.DataFrame, recall: pd.DataFrame) -> list[str]:
+    """Which station's yield dipped, which lots explain it, and where the affected drones are."""
+    out = []
+    summary = station_yield_summary(weekly)
+    worst = summary.loc[summary["z"].idxmin()] if len(summary) else None
+    if worst is None or worst["z"] > -Z_THRESHOLD:
+        out.append("No station's weekly yield fell by more than normal week-to-week variation would explain.")
+    else:
+        out.append(f"**{worst['station_name']}'s first-pass yield dipped to {worst['worst_fpy']:.0%} in the week of "
+                   f"{_day(worst['worst_week'])}**, against {worst['overall']:.0%} over the whole period.")
+    flagged = flagged_lots(lots)
+    if flagged.empty:
+        out.append("No lot's failure rate stands out from its station's.")
+    else:
+        top = flagged.iloc[0]
+        lo, hi = flagged["lift"].min(), flagged["lift"].max()
+        spread = f"{lo:.0f} times" if round(lo) == round(hi) else f"{lo:.0f} to {hi:.0f} times"
+        n = len(flagged)
+        out.append(
+            f"**{n} {'lot stands' if n == 1 else 'lots stand'} out.** Drones that received "
+            f"{'it' if n == 1 else 'them'} failed first inspection {spread} as often as their station's average. "
+            f"The worst is {top['lot_id']} ({top['supplier_name']}): {int(top['fails'])} of {int(top['drones_inspected'])} "
+            f"drones failed ({top['fail_rate']:.0%} against {top['station_fail_rate']:.1%}).")
+        if len(recall) and int(recall["drones"].iloc[0]):
+            r = recall.iloc[0]
+            d = int(r["drones"])
+            out.append(f"{d} {'drone contains' if d == 1 else 'drones contain'} {'this lot' if n == 1 else 'one of these lots'}. "
+                       f"Where {'it is' if d == 1 else 'they are'} now: {int(r['shipped'])} shipped, {int(r['packed'])} packed and waiting, "
+                       f"{int(r['in_line'])} still in the line.")
+    return out

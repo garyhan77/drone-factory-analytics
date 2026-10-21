@@ -96,10 +96,14 @@ def wait_small_multiples(df, pal: Palette, highlight: str) -> go.Figure:
     return fig
 
 
-def horizontal_bar(labels, values, pal: Palette, highlight: str | None = None, *, unit: str = "") -> go.Figure:
-    """One bar per label, largest first. The highlighted bar (if any) is the accent colour, the rest grey."""
+def horizontal_bar(labels, values, pal: Palette, highlight=None, *, unit: str = "") -> go.Figure:
+    """One bar per label, largest first. Highlighted bars (a label or a set of labels) are the accent colour, the rest grey.
+
+    With no highlight every bar is the accent colour: one series, one colour.
+    """
     order = list(labels)
-    colours = [pal.accent if highlight is None or lab == highlight else pal.context for lab in order]
+    chosen = {highlight} if isinstance(highlight, str) else (set(highlight) if highlight is not None else None)
+    colours = [pal.accent if chosen is None or lab in chosen else pal.context for lab in order]
     fig = go.Figure(go.Bar(
         y=order, x=list(values), orientation="h", marker=dict(color=colours, cornerradius=CORNER_RADIUS),
         text=[f"{v:,.0f}{unit}" for v in values], textposition="outside", cliponaxis=False,
@@ -120,4 +124,59 @@ def lead_dwell_chart(df, pal: Palette) -> go.Figure:
     ])
     style(fig, pal, height=320, legend=True)
     fig.update_yaxes(title_text="Days (weekly average)", rangemode="tozero")
+    return fig
+
+
+# ---------------------------------------------------------------------------- Quality & Traceability
+
+import math  # noqa: E402
+
+
+def yield_chart(df, overall: float, pal: Palette) -> go.Figure:
+    """Weekly first-pass yield for one station, with its overall rate as a labelled reference line and the lowest week marked."""
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df["week_start"], y=df["fpy"], name="First-pass yield", mode="lines", showlegend=False,
+        line=dict(color=pal.accent, width=LINE_WIDTH), customdata=df["inspections"],
+        hovertemplate="%{y:.0%} of %{customdata} inspections<extra></extra>"))
+    big = df[df["inspections"] >= 10]
+    low = big.loc[big["fpy"].idxmin()] if len(big) else df.loc[df["fpy"].idxmin()]
+    fig.add_trace(go.Scatter(
+        x=[low["week_start"]], y=[low["fpy"]], mode="markers+text", showlegend=False, hoverinfo="skip",
+        marker=dict(color=pal.accent, size=MARKER_SIZE, line=dict(color=pal.surface, width=RING_WIDTH)),
+        text=[f"Lowest: {low['fpy']:.0%}"], textposition="bottom center", textfont=dict(color=pal.ink_secondary)))
+    fig.add_hline(y=overall, line=dict(color=pal.ink_muted, width=1), annotation_text=f"Overall {overall:.0%}",
+                  annotation_position="right", annotation_font=dict(color=pal.ink_secondary, size=12))
+    style(fig, pal, height=320)
+    fig.update_layout(margin=dict(l=8, r=96, t=12, b=8))  # room for the reference label outside the plot
+    floor = max(0.0, math.floor((float(df["fpy"].min()) - 0.1) * 10 + 1e-9) / 10)  # a tenth below the lowest week; the epsilon guards float error
+    fig.update_yaxes(tickformat=".0%", range=[floor, 1.0], title_text="First-pass yield")
+    return fig
+
+
+def lot_lift_chart(df, pal: Palette, flag_at: float | None = None) -> go.Figure:
+    """How many times its station's failure rate each lot ran. Emergency lots in the accent colour, regular lots grey.
+
+    A solid reference line marks the station average (1x) and, if given, the level at which a lot is flagged.
+    """
+    df = df.sort_values("lift", ascending=False)
+    fig = go.Figure()
+    for is_emergency, name, colour in ((True, "Emergency lot (spot-buy)", pal.accent), (False, "Regular lot", pal.context)):
+        part = df[df["is_emergency"] == is_emergency]
+        fig.add_trace(go.Bar(
+            y=part["lot_id"], x=part["lift"], name=name, orientation="h",
+            marker=dict(color=colour, cornerradius=CORNER_RADIUS), text=[f"{v:.1f}×" for v in part["lift"]],
+            textposition="outside", cliponaxis=False, textfont=dict(color=pal.ink_secondary),
+            customdata=part[["fails", "drones_inspected", "fail_rate", "station_fail_rate"]].to_numpy(),
+            hovertemplate="%{y}: %{x:.1f}× the station average<br>%{customdata[0]} of %{customdata[1]} drones failed "
+                          "(%{customdata[2]:.0%} against %{customdata[3]:.1%})<extra></extra>"))
+    style(fig, pal, height=horizontal_bar_height(len(df), extra=64), legend=True, hovermode="closest")
+    fig.update_layout(bargap=bar_gap(), barmode="overlay", margin=dict(l=8, r=56, t=36, b=8))
+    fig.update_yaxes(categoryorder="array", categoryarray=list(df["lot_id"]), autorange="reversed", showgrid=False)
+    fig.update_xaxes(showgrid=False, showticklabels=False, showline=False)
+    fig.add_vline(x=1, line=dict(color=pal.ink_muted, width=1), annotation_text="Station average",
+                  annotation_position="top", annotation_font=dict(color=pal.ink_secondary, size=12))
+    if flag_at:
+        fig.add_vline(x=flag_at, line=dict(color=pal.ink_muted, width=1), annotation_text=f"Flagged at {flag_at:.0f}×",
+                      annotation_position="top", annotation_font=dict(color=pal.ink_secondary, size=12))
     return fig
