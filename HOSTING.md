@@ -3,6 +3,8 @@
 The app runs on Streamlit Community Cloud and reads a PostgreSQL database on Neon. Neither holds anything private:
 the data is synthetic, and the app connects with a role that can only read.
 
+Live app: https://drone-factory-analytics.streamlit.app/
+
 ## What to expect
 
 - **The first visit after a quiet spell is slow.** Streamlit's free tier puts idle apps to sleep, and Neon's free tier
@@ -28,7 +30,7 @@ the data is synthetic, and the app connects with a role that can only read.
    make verify-hosting
    ```
    Every line must say PASS.
-4. **Streamlit Community Cloud:** New app, this repo, branch `main`, main file `app/Home.py`, Python 3.12 or 3.13.
+4. **Streamlit Community Cloud:** New app, this repo, branch `main`, main file `app/Home.py`, Python 3.13 (what the live app uses; 3.12 should also work).
    Under Advanced settings > Secrets paste (see `.streamlit/secrets.toml.example`):
    ```
    DATABASE_URL = "postgresql://app_readonly:...@...neon.tech/...?sslmode=require"
