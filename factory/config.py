@@ -61,6 +61,19 @@ def weekly_releases(week: int) -> int:
     return round(value)
 
 
+# Optional confounder for the analysis layer (analysis/). With a slope above zero, every station's baseline
+# first-pass fail rate rises by this much during the weeks when inspectors are swamped (see DOMAIN.md), which
+# are also the weeks the substitute lots reach the line. The default of 0 leaves the generated data exactly
+# as it was.
+FAIL_RATE_PRESSURE_SLOPE = 0.0
+PRESSURE_WEEKS = range(11, 16)
+
+
+def line_pressure(week: int) -> float:
+    """1 in the weeks when inspectors are swamped, 0 otherwise."""
+    return 1.0 if week in PRESSURE_WEEKS else 0.0
+
+
 # --- Packing and shipping ---------------------------------------------------
 PACK_HOURS = (4, 24)  # working hours from passing Final Test to being packed (random in this range)
 SHIP_BATCH_HOUR = 16  # one batch each weekday; everything packed by this time ships that day

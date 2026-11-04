@@ -36,6 +36,7 @@ class LineResult:
     inventory_snapshots: pd.DataFrame
     drone_part_lots: pd.DataFrame
     drones: pd.DataFrame  # internal: serial, release time, whether it carries a substitute-lot fastener
+    job_truth: pd.DataFrame | None = None  # internal: the fail rate and random draw behind each job's first inspection
 
 
 def work_minute_to_datetime(minute: float) -> datetime:
@@ -95,6 +96,7 @@ def simulate_line(rng: np.random.Generator) -> LineResult:
     }
 
     work_orders, inspections, lots_used, receiving, snapshots = [], [], [], [], []
+    job_truth = []
     ready = release.copy()  # when each drone is ready for the next station
 
     for station in cfg.STATIONS:
@@ -132,7 +134,9 @@ def simulate_line(rng: np.random.Generator) -> LineResult:
                 substitute = station.code == cfg.SPIKE_STATION and any(
                     inventory.is_spot_buy_lot(look.lots[pid]) for pid in spike_part_ids
                 )
-                failed = fail_draw < (cfg.SUBSTITUTE_FAIL_RATE if substitute else station.fail_rate)
+                pressure = cfg.FAIL_RATE_PRESSURE_SLOPE * cfg.line_pressure(week_of(start))
+                fail_rate = (cfg.SUBSTITUTE_FAIL_RATE if substitute else station.fail_rate) + pressure
+                failed = fail_draw < fail_rate
                 cycle_min = round(cycle_h * 60)
                 total_min = round((cycle_h + (rework_h if failed else 0.0)) * 60)
                 if start % cfg.SHIFT_MIN + total_min > cfg.SHIFT_MIN:  # would run past the end of the shift
@@ -145,6 +149,10 @@ def simulate_line(rng: np.random.Generator) -> LineResult:
                 previous_start = max(previous_start, start)  # a blocked job at the head holds up the queue
                 continue
 
+            job_truth.append({
+                "serial_number": serials[i], "station_code": station.code, "week": week_of(start),
+                "fail_draw": fail_draw, "pressure": pressure, "substitute": bool(substitute), "failed": bool(failed),
+            })
             taken = inventory.take(day, serials[i])
             previous_start = start
             lane_free[lane] = finished_at[i] = start + total_min
@@ -195,6 +203,7 @@ def simulate_line(rng: np.random.Generator) -> LineResult:
             "release_ts": [work_minute_to_datetime(m) for m in release],
             "carries_substitute_lot": on_substitute_lot,
         }),
+        job_truth=pd.DataFrame(job_truth),
     )
 
 

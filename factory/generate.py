@@ -25,6 +25,7 @@ class Generated:
     windows: Windows
     results: pd.DataFrame | None = None  # data quality results, filled in by factory.build
     target: str | None = None  # "host/database" the data was loaded into, filled in by factory.build (never the password)
+    truth: pd.DataFrame | None = None  # internal, for analysis/: per-job fail draw, pressure and substitute flag
 
 
 def generate(seed: int = cfg.SEED) -> Generated:
@@ -42,4 +43,4 @@ def generate(seed: int = cfg.SEED) -> Generated:
         "finished_goods": build_finished_goods(line.work_orders, np.random.default_rng(seed + 1)),
     }
     tables, answer_key, windows = plant_errors(clean, np.random.default_rng(seed + 2))
-    return Generated(tables, clean, answer_key, windows)
+    return Generated(tables, clean, answer_key, windows, truth=line.job_truth)
