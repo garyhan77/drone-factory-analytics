@@ -38,6 +38,7 @@ app/ (Streamlit)          five pages that read only the metric views
 - **The simulation is causal, not scripted.** Drones queue for station lanes; each station draws parts from its own line-side shelf, topped up from a warehouse by supplier deliveries. A late delivery empties a shelf, the work waits, and emergency spot-buy parts are used instead. Those parts fail inspection more often, which is what produces the defect spike.
 - **Data quality comes before metrics.** Six kinds of error are planted: duplicate work orders, end times before start times, inspections with no work order, missing defect codes, negative stock and over-receipts. SQL checks find them, a scorer compares the result to the answer key, and the clean views apply a written policy for each.
 - **Metrics live in SQL.** First-pass yield, defect Pareto, cycle time and queue wait, supplier on-time-in-full, and days of stock against days to delivery are all defined in views. The app only reads them.
+- **There is also a statistical layer.** Causal inference, regression and experiment design, each checked against the truth the generator plants, are in [analysis/](analysis/README.md) and on the app's Causal & Experiments page, which reads saved results and runs no models. It does not change the data or the other pages.
 - **The tests cover the data and the app.** 299 tests cover the generator, the checks, the metric views and the pages. The full design and its reasoning are in [DOMAIN.md](DOMAIN.md).
 
 ## Run it locally

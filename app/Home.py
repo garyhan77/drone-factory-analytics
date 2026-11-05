@@ -16,5 +16,6 @@ pages = [
     st.Page("views/quality.py", title="Quality & Traceability"),
     st.Page("views/inventory.py", title="Inventory & Suppliers"),
     st.Page("views/data_quality.py", title="Data Quality"),
+    st.Page("views/causal_experiments.py", title="Causal & Experiments"),
 ]
 st.navigation(pages).run()

@@ -251,3 +251,48 @@ def detection_chart(df, pal: Palette) -> go.Figure:
         fig.add_annotation(x=row["planted_rows"], y=row["label"], text=f"{int(row['caught'])} of {int(row['planted_rows'])} caught",
                            showarrow=False, xanchor="left", xshift=8, font=dict(color=pal.ink_secondary, size=13))
     return fig
+
+
+# ---------------------------------------------------------------------------- Analysis
+
+
+def estimator_chart(df, truth: float, pal: Palette) -> go.Figure:
+    """Mean estimate of the planted effect from each method, in points, with a line at the true value.
+
+    The one number every method should hit is the subject, so the methods are accent bars and the truth is a single
+    solid line in the second colour, labelled directly.
+    """
+    df = df.reset_index(drop=True)
+    fig = go.Figure(go.Bar(
+        y=df["Estimator"], x=df["Mean estimate (points)"], orientation="h", marker=dict(color=pal.accent, cornerradius=CORNER_RADIUS),
+        hovertemplate="%{y}: %{x:.1f} points<extra></extra>"))
+    style(fig, pal, height=horizontal_bar_height(len(df), extra=64), hovermode="closest")
+    fig.update_layout(bargap=bar_gap(), margin=dict(l=8, r=16, t=28, b=8))
+    fig.update_yaxes(categoryorder="array", categoryarray=list(df["Estimator"]), autorange="reversed", showgrid=False)
+    top = float(max(df["Mean estimate (points)"].max(), truth)) * 1.15
+    fig.update_xaxes(showgrid=False, showticklabels=False, showline=False, range=[0, top])
+    fig.add_vline(x=truth, line=dict(color=pal.accent_2, width=LINE_WIDTH))
+    fig.add_annotation(x=truth, y=1, yref="paper", text=f"True effect {truth:.1f}", showarrow=False, yanchor="bottom",
+                       xanchor="left", xshift=6, font=dict(color=pal.accent_2, size=13))
+    for _, row in df.iterrows():
+        fig.add_annotation(x=row["Mean estimate (points)"], y=row["Estimator"], text=f"{row['Mean estimate (points)']:.1f}",
+                           showarrow=False, xanchor="left", xshift=8, font=dict(color=pal.ink_secondary, size=13))
+    return fig
+
+
+def lane_gain_chart(df, bar: float, pal: Palette) -> go.Figure:
+    """Extra drones shipped by each added lane, with its 95% interval, against the minimum worth building for."""
+    df = df.reset_index(drop=True)
+    fig = go.Figure(go.Bar(
+        y=df["label"], x=df["gain"], orientation="h", marker=dict(color=pal.accent, cornerradius=CORNER_RADIUS),
+        error_x=dict(type="data", symmetric=False, array=df["hi"] - df["gain"], arrayminus=df["gain"] - df["lo"],
+                     color=pal.ink_secondary, thickness=LINE_WIDTH, width=6),
+        hovertemplate="%{y}: %{x:.0f} more drones<extra></extra>"))
+    style(fig, pal, height=horizontal_bar_height(len(df), extra=64), hovermode="closest")
+    fig.update_layout(bargap=bar_gap(), margin=dict(l=8, r=16, t=28, b=8))
+    fig.update_yaxes(categoryorder="array", categoryarray=list(df["label"]), autorange="reversed", showgrid=False)
+    fig.update_xaxes(title_text="Extra drones shipped over 26 weeks (bar: 95% interval)", range=[0, float(df["hi"].max()) * 1.15])
+    fig.add_vline(x=bar, line=dict(color=pal.accent_2, width=LINE_WIDTH))
+    fig.add_annotation(x=bar, y=1, yref="paper", text=f"Minimum worth building: {bar:.0f}", showarrow=False, yanchor="bottom",
+                       xanchor="left", xshift=6, font=dict(color=pal.accent_2, size=13))
+    return fig
