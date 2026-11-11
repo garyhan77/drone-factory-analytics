@@ -65,12 +65,20 @@ if choices:
     right.metric("Still in the line", int(scope["still_in_the_line"]))
     st.caption(f"{int(scope['drones_containing_lot'])} drones contain {lot} ({part_of[lot]}), installed between {scope['first_installed']:%d %b} and "
                f"{scope['last_installed']:%d %b %Y}.")
+    flagged_ids = list(flagged["lot_id"])
+    both = query("SELECT COUNT(*) AS n FROM (SELECT serial_number FROM clean_drone_part_lots WHERE lot_id = ANY(%s) "
+                 "GROUP BY serial_number HAVING COUNT(DISTINCT lot_id) > 1) t", (flagged_ids,)).iloc[0]["n"]
+    if both and len(recall_all):
+        st.caption(f"Across all {len(flagged_ids)} flagged lots, {int(recall_all['drones'].iloc[0])} different drones are affected. {int(both)} of them "
+                   f"contain more than one flagged lot, so the lot counts add up to more than that. The table below shows which.")
     drones = query(
         "SELECT l.serial_number AS \"Drone\", w.start_ts::date AS \"Installed\", "
         "CASE WHEN f.shipped_ts IS NOT NULL THEN 'Shipped' WHEN f.serial_number IS NOT NULL THEN 'Packed, waiting' "
-        "ELSE 'Still in the line' END AS \"Where it is\", f.shipped_ts::date AS \"Shipped on\" "
+        "ELSE 'Still in the line' END AS \"Where it is\", f.shipped_ts::date AS \"Shipped on\", "
+        "(SELECT string_agg(o.lot_id, ', ' ORDER BY o.lot_id) FROM clean_drone_part_lots o WHERE o.serial_number = l.serial_number "
+        "AND o.lot_id = ANY(%s) AND o.lot_id <> l.lot_id) AS \"Also contains (other flagged lots)\" "
         "FROM clean_drone_part_lots l JOIN clean_work_orders w ON w.serial_number = l.serial_number AND w.station_code = l.station_code "
-        "LEFT JOIN clean_finished_goods f ON f.serial_number = l.serial_number WHERE l.lot_id = %s ORDER BY 2, 1", (lot,))
+        "LEFT JOIN clean_finished_goods f ON f.serial_number = l.serial_number WHERE l.lot_id = %s ORDER BY 2, 1", (flagged_ids, lot))
     with st.expander("Table view: every drone containing this lot"):
         st.dataframe(drones, hide_index=True, width="stretch")
 else:
