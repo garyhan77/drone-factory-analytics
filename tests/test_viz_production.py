@@ -141,5 +141,6 @@ def test_the_production_page_runs_and_tells_the_story(database, monkeypatch):
     stations = at.dataframe[-1].value                                                  # the station summary
     assert list(stations["Station"]) == ["Airframe", "Wing Assembly", "Motor & Prop", "Avionics", "Final Test"]
     assert stations["Average wait (h)"].iloc[0] == "-"                                 # the first station has no wait
-    assert all(isinstance(v, str) for col in ("Average wait (h)", "90th percentile wait (h)") for v in stations[col])   # one type per column
+    assert all(isinstance(v, str) for v in stations["Average wait (h)"])                  # one type per column
+    assert "90th percentile cycle (h)" not in stations.columns and "90th percentile wait (h)" not in stations.columns
     assert any("synthetic data" in c.value for c in at.caption)

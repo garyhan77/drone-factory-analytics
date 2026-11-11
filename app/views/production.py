@@ -44,9 +44,7 @@ chart(charts.lead_dwell_chart(shipped, pal), shipped.rename(columns={
 
 st.subheader("Station summary")
 summary_table = summary.copy()
-for column in ("avg_wait_hours", "p90_wait_hours"):  # the first station has no wait: show a dash as text, not "None" or a mixed column
-    summary_table[column] = summary_table[column].map(lambda v: "-" if pd.isna(v) else f"{v:.1f}")
-st.dataframe(summary_table.rename(columns={
+summary_table["avg_wait_hours"] = summary_table["avg_wait_hours"].map(lambda v: "-" if pd.isna(v) else f"{v:.1f}")  # the first station has no wait: a dash, not "None"
+st.dataframe(summary_table.drop(columns=["p90_cycle_hours", "p90_wait_hours"]).rename(columns={
     "station_seq": "Seq", "station_code": "Code", "station_name": "Station", "completed_orders": "Completed jobs",
-    "median_cycle_hours": "Median cycle (h)", "p90_cycle_hours": "90th percentile cycle (h)",
-    "avg_wait_hours": "Average wait (h)", "p90_wait_hours": "90th percentile wait (h)"}), hide_index=True, width="stretch")
+    "median_cycle_hours": "Median cycle (h)", "avg_wait_hours": "Average wait (h)"}), hide_index=True, width="stretch")
