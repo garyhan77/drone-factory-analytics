@@ -48,7 +48,7 @@ chart(charts.lot_lift_chart(labelled, pal, flag_at=findings.LOT_MIN_LIFT), eligi
                                                        "station_fail_rate", "lift"]].rename(columns={
     "lot_id": "Lot", "part_id": "Part", "supplier_name": "Supplier", "drones_inspected": "Drones inspected", "fails": "Failed",
     "fail_rate": "Failure rate", "station_fail_rate": "Station rate", "lift": "Times the station rate"}), key="lots",
-    caption=f"Each bar is a lot's first-attempt failure rate divided by its station's. Lots with fewer than "
+    caption=f"Each bar is a lot's first-attempt failure rate divided by the average failure rate of its station. Lots with fewer than "
     f"{findings.LOT_MIN_DRONES} inspected drones are left out, and a lot is flagged at {findings.LOT_MIN_LIFT:.0f} times or more. "
     "A regular lot can look elevated if it went into the same drones as an emergency lot.")
 
