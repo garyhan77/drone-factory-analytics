@@ -43,7 +43,8 @@ chart(charts.horizontal_bar(top["defect_code"], top["fails"], pal, highlight=set
 st.subheader("Which lots?")
 eligible = lots[lots["drones_inspected"] >= findings.LOT_MIN_DRONES].head(12).copy()
 eligible["is_emergency"] = eligible["supplier_id"] == cfg.SPOT_BUY
-chart(charts.lot_lift_chart(eligible, pal, flag_at=findings.LOT_MIN_LIFT), eligible[["lot_id", "part_id", "supplier_name", "drones_inspected", "fails", "fail_rate",
+labelled = eligible.assign(lot_id=eligible["lot_id"] + "  (" + eligible["part_name"] + ")")   # the chart names the part next to the lot
+chart(charts.lot_lift_chart(labelled, pal, flag_at=findings.LOT_MIN_LIFT), eligible.assign(part_id=eligible["part_id"] + " " + eligible["part_name"])[["lot_id", "part_id", "supplier_name", "drones_inspected", "fails", "fail_rate",
                                                        "station_fail_rate", "lift"]].rename(columns={
     "lot_id": "Lot", "part_id": "Part", "supplier_name": "Supplier", "drones_inspected": "Drones inspected", "fails": "Failed",
     "fail_rate": "Failure rate", "station_fail_rate": "Station rate", "lift": "Times the station rate"}), key="lots",
@@ -54,14 +55,15 @@ chart(charts.lot_lift_chart(eligible, pal, flag_at=findings.LOT_MIN_LIFT), eligi
 st.subheader("Recall scope")
 choices = list(flagged["lot_id"]) or list(eligible["lot_id"])
 if choices:
-    lot = st.selectbox("Lot", choices, index=0, help="The flagged lots, worst first.")
+    part_of = dict(zip(lots["lot_id"], lots["part_name"]))
+    lot = st.selectbox("Lot", choices, index=0, format_func=lambda x: f"{x} ({part_of[x]})", help="The flagged lots, worst first.")
     scope = query("SELECT drones_containing_lot, already_shipped, packed_not_shipped, still_in_the_line, first_installed, last_installed "
                   "FROM v_recall_scope WHERE lot_id = %s", (lot,)).iloc[0]
     left, middle, right = st.columns(3)
     left.metric("Already shipped", int(scope["already_shipped"]))
     middle.metric("Packed, waiting to ship", int(scope["packed_not_shipped"]))
     right.metric("Still in the line", int(scope["still_in_the_line"]))
-    st.caption(f"{int(scope['drones_containing_lot'])} drones contain {lot}, installed between {scope['first_installed']:%d %b} and "
+    st.caption(f"{int(scope['drones_containing_lot'])} drones contain {lot} ({part_of[lot]}), installed between {scope['first_installed']:%d %b} and "
                f"{scope['last_installed']:%d %b %Y}.")
     drones = query(
         "SELECT l.serial_number AS \"Drone\", w.start_ts::date AS \"Installed\", "

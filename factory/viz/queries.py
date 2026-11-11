@@ -26,8 +26,9 @@ def production() -> dict[str, pd.DataFrame]:
 def quality() -> dict[str, pd.DataFrame]:
     weekly = query("SELECT week_start, station_seq, station_code, station_name, inspections, passes, fpy "
                    "FROM v_first_pass_yield_weekly ORDER BY station_seq, week_start")
-    lots = query("SELECT lot_id, part_id, station_code, supplier_id, supplier_name, drones_inspected, fails, fail_rate, "
-                 "station_fail_rate, lift FROM v_lot_quality ORDER BY lift DESC NULLS LAST")
+    lots = query("SELECT q.lot_id, q.part_id, p.part_name, q.station_code, q.supplier_id, q.supplier_name, q.drones_inspected, q.fails, "
+                 "q.fail_rate, q.station_fail_rate, q.lift FROM v_lot_quality q JOIN clean_parts p USING (part_id) "
+                 "ORDER BY q.lift DESC NULLS LAST")
     flagged = findings.flagged_lots(lots)
     recall = query(
         "WITH d AS (SELECT DISTINCT serial_number FROM clean_drone_part_lots WHERE lot_id = ANY(%s)) "
