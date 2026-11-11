@@ -35,8 +35,8 @@ st.subheader("Which defects?")
 top = pareto.head(10)
 uncoded = int(pareto.loc[pareto["defect_code"].str.endswith("UNCODED"), "fails"].sum())
 chart(charts.horizontal_bar(top["defect_code"], top["fails"], pal, highlight=set(top.loc[top["station_code"] == code, "defect_code"])),
-      top.rename(columns={"station_code": "Station", "defect_code": "Defect code", "fails": "Failures", "pct_of_fails": "Share of all failures",
-                          "cum_pct": "Cumulative share"}), key="pareto",
+      top.drop(columns=["cum_pct"]).rename(columns={"station_code": "Station", "defect_code": "Defect code", "fails": "Failures",
+                                                    "pct_of_fails": "Share of all failures"}), key="pareto",
       caption=f"The ten most common first-attempt failures. Codes at {station} are in colour. "
       f"{uncoded} failures were recorded with no usable defect code; they are kept and labelled UNCODED, not dropped.")
 
