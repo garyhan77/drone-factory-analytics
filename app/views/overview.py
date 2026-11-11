@@ -3,7 +3,7 @@ import streamlit as st
 from factory.viz import findings, queries
 from factory.viz.render import page_header
 
-page_header("Overview", "Everyone", "What's going on in the factory, and can I trust the data?")
+page_header("Overview", "Everyone", "Drone Factory Analytics")
 
 st.markdown(findings.status_line(queries.status()))
 
