@@ -41,14 +41,23 @@ chart(charts.horizontal_bar(perf["supplier_name"], perf["otif_rate"] * 100, pal,
 st.subheader("Right part, wrong place")
 top_gap = gap.head(8).copy()
 top_gap["label"] = top_gap["part_id"] + "  " + top_gap["part_name"] + " (" + top_gap["station_name"] + ")"
-worst_station = gap.groupby("station_name")["days_short_at_line"].sum().idxmax() if len(gap) else None
+by_station = gap.groupby("station_name")["days_short_at_line"].sum() if len(gap) else None
+worst_station = by_station.idxmax() if by_station is not None else None
+all_worst = bool(len(top_gap)) and set(top_gap["station_name"]) == {worst_station}
+if worst_station is None:
+    gap_caption = None
+elif all_worst:
+    gap_caption = (f"Weekdays when the end-of-day warehouse count could cover at least one drone but the line-side shelf could not. "
+                   f"All of the top {len(top_gap)} are {worst_station} parts: across its parts, {worst_station} was short at the line on the most weekdays "
+                   f"({int(by_station.max())} in total).")
+else:
+    gap_caption = (f"Weekdays when the end-of-day warehouse count could cover at least one drone but the line-side shelf could not. "
+                   f"{worst_station} is in colour: its parts were short at the line on the most weekdays in total ({int(by_station.max())}).")
 chart(charts.horizontal_bar(top_gap["label"], top_gap["days_short_at_line"], pal,
-                            highlight=set(top_gap.loc[top_gap["station_name"] == worst_station, "label"]), unit=" days"),
+                            highlight=None if all_worst else set(top_gap.loc[top_gap["station_name"] == worst_station, "label"]), unit=" days"),
       gap.rename(columns={"part_id": "Part", "part_name": "Name", "station_code": "Station code", "station_name": "Station",
                           "days_short_at_line": "Weekdays short at the line", "first_day": "First", "last_day": "Last",
-                          "avg_warehouse_stock": "Average warehouse stock"}), key="gap",
-      caption=f"Weekdays when the end-of-day warehouse count could cover at least one drone but the line-side shelf could not. "
-      f"{worst_station} is in colour: it has the most parts affected." if worst_station else None)
+                          "avg_warehouse_stock": "Average warehouse stock"}), key="gap", caption=gap_caption)
 
 st.subheader("Stock history")
 choices = risk["part_id"] + "  " + risk["part_name"]
