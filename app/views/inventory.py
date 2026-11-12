@@ -22,10 +22,10 @@ risk["Status"] = risk["risk_status"].map(theme.risk_label)
 st.subheader("The most urgent parts")
 urgent = risk.head(10)
 chart(charts.cushion_chart(urgent, pal), risk[["Status", "part_id", "part_name", "supplier_name", "on_hand", "daily_demand", "days_remaining",
-                                               "next_expected", "inbound_qty", "arrival_bad_case_days", "cushion_days"]].rename(columns={
+                                               "next_expected", "days_to_next", "inbound_qty"]].rename(columns={
     "part_id": "Part", "part_name": "Name", "supplier_name": "Supplier", "on_hand": "In stock", "daily_demand": "Used per day",
-    "days_remaining": "Days of stock", "next_expected": "Next delivery due", "inbound_qty": "On order", "arrival_bad_case_days": "Days to a bad delivery",
-    "cushion_days": "Cushion (days)"}), key="cushion",
+    "days_remaining": "Days of stock", "next_expected": "Next delivery due", "days_to_next": "Days until next delivery",
+    "inbound_qty": "On order"}), key="cushion",
     caption="Cushion = days of stock left, minus the days until the next delivery arrives if it is as late as that supplier's worst "
     "one in ten. Negative means the stock is expected to run out first. Usage is the last 14 days of drones started times the bill of "
     "materials. This is arithmetic on observed data, not a forecast. The table view lists all 40 parts.")
