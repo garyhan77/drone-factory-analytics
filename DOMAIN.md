@@ -129,7 +129,7 @@ One root cause drives everything: weekly releases ramp up (starting at 18 drones
 |---|---|---|
 | 1-8 | Launch. Releases start at 18 a week and climb. Reorder points are sized from launch-volume demand. | Healthy yield, short queues, comfortable stock |
 | 9-11 | The hardware/fasteners supplier ships late and short as volume rises. Fastener stock runs thin. Substitute fastener lots are issued against the wrong part numbers. | Late and short receipts. **Negative inventory** on fastener parts. The substitute lot is bought from a spot-buy distributor and arrives with its own lot ID. |
-| 12-15 | The line runs on the substitute lot, and loose-fastener failures spike at Motor & Prop (22% on drones that got the substitute lot, against 2.5% otherwise). Inspectors are swamped, and relabelled rework units get mistyped serials. The supplier's catch-up shipments over-ship. | Yield dip at Motor & Prop. **Missing defect codes**, **orphan inspections** and **over-receipts** cluster here. `drone_part_lots` records which drones got the substitute lot. |
+| 12-15 | The line runs on the substitute lot, and loose-fastener failures spike at Motor & Prop (22% on drones that got the substitute lot, against 2.5% otherwise). Inspectors are swamped, and relabelled rework units get mistyped serials. | Yield dip at Motor & Prop. **Missing defect codes** and **orphan inspections** cluster here. `drone_part_lots` records which drones got the substitute lot. |
 | 12-26 | Rework returns to the line in bursts and releases keep climbing past what Avionics can handle. A queue builds in front of it; completions plateau while starts keep rising. WIP piles up and work orders get re-keyed by hand. Drones wait at Avionics, so they reach Final Test and shipping later. | Queue wait at Avionics grows. Output flattens. Lead time from first station to shipped grows. Dwell time from test pass to shipped stays normal, because the delay is upstream. **Duplicate work orders** and **end-before-start** errors cluster at Avionics. |
 | 16-26 | Reorder points are still sized for launch volume while weekly releases climb toward almost double that, so usage outgrows the stock rules. Long-lead parts run thinnest, because they have the longest wait for the next delivery. Replenishment from warehouse to the line also lags the ramp. | About half the parts look at risk of running out before their next delivery, mostly long-lead suppliers. Ridgeline is still the least reliable supplier, so a risk measure that plans for a bad delivery puts more of its parts on the list. For some parts the warehouse looks fine while `LINE_SIDE` stock is empty. |
 
@@ -143,7 +143,7 @@ The simulation was tuned and checked across seeds; these are the real events in 
 - The thread locker hits zero total stock in weeks 11 and 12 (1 and 3 days); the other fasteners run down to an empty warehouse in week 10. Emergency lots are ordered on 16 and 18 March (week 11) and arrive on 18 and 20 March.
 - 58 drones carry a substitute-lot fastener, in weeks 11, 12, 14 and 15 (a double hump: older regular stock is used first). They fail first inspection at Motor & Prop 20.7% of the time against 2.2% for the rest, and weekly Motor & Prop yield dips to 88-91% in weeks 11-12 and 84-88% in weeks 14-15.
 - Avionics wait grows from about 11 hours (weeks 1-10) to 36 (week 12), 78 (week 14), 271 (week 20) and 427 (week 26). Wing Assembly's wait peaks at about 110 hours; the other stations stay under 10.
-- Ridgeline has the lowest on-time-in-full rate: 0.74, against 0.84 to 0.89 for the other regular suppliers (its three over-received shipments earn no in-full credit). The spot-buy distributor is perfect, on 9 shipments.
+- Ridgeline has the lowest on-time-in-full rate: 0.71, against 0.84 to 0.89 for the other regular suppliers. The spot-buy distributor is perfect, on 9 shipments.
 - Of 738 drones released, 620 passed Final Test, 609 shipped, 6 are packed and waiting for the next batch, and 5 are not yet packed. The other 118 are still on the line at the extract, mostly queued at Avionics.
 - Lead time from first station to shipped grows from 3.7 days (drones shipped in weeks 4-9) to 19.6 days (weeks 20-25), while dwell from test pass to shipped stays at about 1.9 days. The delay is upstream. Caveat for any analysis: lead time is only measurable for drones that have shipped, so the longest waits (drones still stuck at Avionics) are missing from the recent weeks and the real growth is understated.
 - Across seeds 0 to 5, the first emergency buy for a spike fastener is placed in weeks 10 to 13 in every seed, and substitute-lot drones fail more than three times as often as the rest.
@@ -186,7 +186,6 @@ The generator corrupts a small number of rows and records exactly which ones in 
 | Negative inventory | 8 | inventory_snapshots | Spike-fastener rows with stock, from the first empty warehouse to 5 days after the last emergency lot arrives (11-25 March, 50 eligible) | Sign of on_hand flipped | `date\|part\|location` |
 | Missing defect code | 4 | inspections | First-attempt failures at Motor & Prop while substitute-lot drones are inspected (19 March to 14 April, 13 eligible) | Code is NULL, empty, or whitespace (a mix) | inspection_id |
 | Orphan inspections | 3 | inspections | Rework re-inspections at Motor & Prop in the same window (13 eligible) | Serial changed to `DF-9...`, a drone that does not exist | inspection_id |
-| Over-receipt | 3 | receiving | Ridgeline regular lots received in the 3 weeks after the first emergency lot (11 eligible) | qty_received is 20 to 50% above qty_expected | shipment_id |
 | Duplicate work orders | 12 | work_orders | Avionics jobs from the first week its average wait exceeds 24 hours (week 12 on, 393 eligible) | A re-keyed copy: new wo_id, same drone, station and times | wo_id of the copy |
 | End before start | 8 | work_orders | Completed Avionics jobs in the same window (391 eligible, never a job that was duplicated) | end_ts 30 minutes to 4 hours before start_ts | wo_id |
 
@@ -200,17 +199,16 @@ Guard checks (nothing planted; each should flag zero rows): status vs. end times
 
 ## Data quality checks
 
-26 checks, each one SQL file in `sql/checks/` with a severity, a category and a description. A check returns one row per offending record.
+25 checks, each one SQL file in `sql/checks/` with a severity, a category and a description. A check returns one row per offending record.
 
 | Category | Checks | Purpose |
 |---|---|---|
-| planted | 6 | One per planted error; scored against the answer key |
-| reconciliation | 1 | `stock_does_not_reconcile`: for each part, received minus used in drones minus in stock at the latest snapshot should be zero. It catches the over-receipts from the stock side, and also shows when a recorded quantity never physically arrived (and so should not be trusted). Scored against the answer key (the parts behind the over-received shipments) |
-| guard | 5 | Relationships nothing was planted into (status vs. end time, lot and serial references, finished goods passed test and are in time order); should flag nothing |
+| planted | 5 | One per planted error; scored against the answer key |
+| guard | 6 | Relationships nothing was planted into (status vs. end time, lot and serial references, finished goods passed test and are in time order, and received stock reconciling with what went into drones plus what is in stock); should flag nothing |
 | sanity | 13 | Standard validation rules (unknown part, station and supplier IDs; allowed values for status, result, attempt and location; duplicates; required fields; a passing inspection with a defect code); should flag nothing here |
 | operational | 1 | A warning, not a data error: shipments still in transit more than 3 days after their expected date; not scored |
 
-Scoring: for every scored check, rows flagged that are not in the answer key count as false positives, so a perfect run means every planted error caught and nothing else flagged. The answer key, the results per check and the flagged records are stored in the database (`dq_answer_key`, `dq_results`, `dq_flagged`) so the app can show them. Result on the default dataset: 38 of 38 planted errors caught, 0 missed, 0 false positives across 25 scored checks (6 planted, 1 reconciliation, 5 guard, 13 sanity); the reconciliation check flags exactly the 3 parts behind the over-received shipments.
+Scoring: for every scored check, rows flagged that are not in the answer key count as false positives, so a perfect run means every planted error caught and nothing else flagged. The answer key, the results per check and the flagged records are stored in the database (`dq_answer_key`, `dq_results`, `dq_flagged`) so the app can show them. Result on the default dataset: 35 of 35 planted errors caught, 0 missed, 0 false positives across 24 scored checks (5 planted, 6 guard, 13 sanity).
 
 ## Clean views and metrics
 
@@ -223,7 +221,6 @@ Every metric reads from the `clean_*` views, never from the raw tables. The clea
 | Inspection with no matching work order | Dropped | It cannot be tied to a drone |
 | Failure with no usable defect code | Kept, labelled `<station>-UNCODED` | The failure is real and must still count toward yield |
 | Negative stock reading | Replaced by the last good reading for that part and location | Keeps the daily history continuous; a negative first reading is dropped |
-| Over-received shipment | Kept, quantity capped at expected (`qty_capped`) | The arrival date is valid; the quantity is not. A capped shipment earns no in-full credit, because its true quantity is unknown and could have been short |
 
 Metrics (28 views in total; definitions are in the comments of `sql/metrics/`):
 

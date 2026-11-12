@@ -3,18 +3,14 @@
 --   on time   = received on or before the expected date
 --   in full   = received at least the expected quantity
 --   lateness  = days after the expected date (0 when on time or early)
--- A shipment whose recorded quantity was over the expected quantity (capped in clean_receiving) has an unverifiable
--- quantity: the true figure could have been anything, including short. It still counts for on-time and lateness, but
--- not toward in-full or OTIF, so the cap can never make a supplier look better than the data supports.
 CREATE OR REPLACE VIEW v_supplier_performance AS
 SELECT
     su.supplier_id,
     su.supplier_name,
     COUNT(*) AS shipments_received,
     ROUND(AVG((r.received_date <= r.expected_date)::int)::numeric, 4) AS on_time_rate,
-    ROUND(AVG(CASE WHEN NOT r.qty_capped THEN (r.qty_received >= r.qty_expected)::int END)::numeric, 4) AS in_full_rate,
-    ROUND(AVG(CASE WHEN NOT r.qty_capped THEN (r.received_date <= r.expected_date AND r.qty_received >= r.qty_expected)::int END)::numeric, 4) AS otif_rate,
-    COUNT(*) FILTER (WHERE r.qty_capped) AS quantity_unverified,
+    ROUND(AVG((r.qty_received >= r.qty_expected)::int)::numeric, 4) AS in_full_rate,
+    ROUND(AVG((r.received_date <= r.expected_date AND r.qty_received >= r.qty_expected)::int)::numeric, 4) AS otif_rate,
     ROUND(AVG(GREATEST(r.received_date - r.expected_date, 0))::numeric, 2) AS avg_days_late,
     ROUND((percentile_cont(0.9) WITHIN GROUP (ORDER BY GREATEST(r.received_date - r.expected_date, 0)))::numeric, 2) AS p90_days_late
 FROM clean_receiving r

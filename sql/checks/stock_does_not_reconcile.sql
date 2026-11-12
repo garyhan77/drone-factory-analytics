@@ -1,6 +1,6 @@
 -- severity: error
--- category: reconciliation
--- description: for a part, what was received does not equal what went into drones plus what is in stock at the latest snapshot (a second way to see receiving quantities that do not match the physical stock)
+-- category: guard
+-- description: for a part, what was received does not equal what went into drones plus what is in stock at the latest snapshot
 WITH received AS (
     SELECT part_id, SUM(qty_received) AS qty
     FROM raw_receiving

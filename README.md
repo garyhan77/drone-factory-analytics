@@ -20,8 +20,8 @@ Three questions, one per role, plus a check on the data itself. The numbers belo
 | --- | --- | --- |
 | [Production](docs/screenshots/production.png) | Production lead | Avionics is the bottleneck. Drones wait about 148 hours before reaching it, against 58 hours before Wing Assembly and 5 hours or less elsewhere. |
 | [Quality & Traceability](docs/screenshots/quality.png) | Quality engineer | Motor & Prop first-pass yield dipped to 84% in the week of 6 April. Tracing lots back shows 3 emergency-purchase fastener lots with failure rates 4 to 7 times their station's average, and every drone that contains one. |
-| [Inventory & Suppliers](docs/screenshots/inventory.png) | Material planner | 15 of 40 parts are at risk of running out before the next delivery. Ridgeline Hardware is the least reliable supplier (74% on time and in full, against 84% to 89% for the others). |
-| [Data Quality](docs/screenshots/data-quality.png) | Data analyst | 38 of 38 planted errors were caught, with 0 missed and 0 false positives across 25 scored checks. Flagged rows are dropped or repaired before any metric is computed. |
+| [Inventory & Suppliers](docs/screenshots/inventory.png) | Material planner | 15 of 40 parts are at risk of running out before the next delivery. Ridgeline Hardware is the least reliable supplier (71% on time and in full, against 84% to 89% for the others). |
+| [Data Quality](docs/screenshots/data-quality.png) | Data analyst | 35 of 35 planted errors were caught, with 0 missed and 0 false positives across 24 scored checks. Flagged rows are dropped or repaired before any metric is computed. |
 
 ![Overview page](docs/screenshots/overview.png)
 
@@ -30,16 +30,16 @@ Three questions, one per role, plus a check on the data itself. The numbers belo
 ```
 factory/ (Python)         generate synthetic data: line simulation, parts inventory, shipping, planted errors
    |                      load 10 raw tables into PostgreSQL
-sql/checks/ (SQL)         26 data quality checks, scored against the planted-error answer key
+sql/checks/ (SQL)         25 data quality checks, scored against the planted-error answer key
 sql/metrics/ (SQL)        clean_* views (flagged rows removed or repaired), then 28 metric views
 app/ (Streamlit)          five pages that read only the metric views
 ```
 
 - **The simulation is causal, not scripted.** Drones queue for station lanes; each station draws parts from its own line-side shelf, topped up from a warehouse by supplier deliveries. A late delivery empties a shelf, the work waits, and emergency spot-buy parts are used instead. Those parts fail inspection more often, which is what produces the defect spike.
-- **Data quality comes before metrics.** Six kinds of error are planted: duplicate work orders, end times before start times, inspections with no work order, missing defect codes, negative stock and over-receipts. SQL checks find them, a scorer compares the result to the answer key, and the clean views apply a written policy for each.
+- **Data quality comes before metrics.** Five kinds of error are planted: duplicate work orders, end times before start times, inspections with no work order, missing defect codes and negative stock. SQL checks find them, a scorer compares the result to the answer key, and the clean views apply a written policy for each.
 - **Metrics live in SQL.** First-pass yield, defect Pareto, cycle time and queue wait, supplier on-time-in-full, and days of stock against days to delivery are all defined in views. The app only reads them.
 - **There is also a statistical layer.** Causal inference, regression and experiment design, each checked against the truth the generator plants, are in [analysis/](analysis/README.md). It does not change the data or the app.
-- **The tests cover the data and the app.** 299 tests cover the generator, the checks, the metric views and the pages. The full design and its reasoning are in [DOMAIN.md](DOMAIN.md).
+- **The tests cover the data and the app.** 335 tests cover the generator, the checks, the metric views and the pages. The full design and its reasoning are in [DOMAIN.md](DOMAIN.md).
 
 ## Run it locally
 

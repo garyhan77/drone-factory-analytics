@@ -5,7 +5,6 @@ Each error is tied to an event in the simulated story, not to a fixed week:
   negative_inventory     Ridgeline fastener stock rows, during the fastener outage
   missing_defect_code    Motor & Prop first-attempt failures, while substitute-lot drones are inspected
   orphan_inspections     Motor & Prop rework re-inspections, in the same window
-  over_receipt           Ridgeline catch-up shipments, after the first emergency lot
   duplicate_work_orders  Avionics jobs, once its queue is building (re-keyed copies with a new wo_id)
   end_before_start       Avionics completed jobs, in the same window
 
@@ -14,7 +13,6 @@ copy plus the record keys. find_windows() works out the eligible rows from the d
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -53,14 +51,6 @@ def plant_orphan_inspections(inspections, eligible, n, rng):
     df, chosen = inspections.copy(), _pick(rng, eligible, n)
     df.loc[chosen, "serial_number"] = "DF-9" + df.loc[chosen, "serial_number"].str[4:]
     return df, sorted(df.loc[chosen, "inspection_id"])
-
-
-def plant_over_receipt(receiving, eligible, n, rng):
-    """Record 20 to 50% more received than expected."""
-    df, chosen = receiving.copy(), _pick(rng, eligible, n)
-    for idx in chosen:
-        df.loc[idx, "qty_received"] = math.ceil(df.loc[idx, "qty_expected"] * float(rng.uniform(1.2, 1.5)))
-    return df, sorted(df.loc[chosen, "shipment_id"])
 
 
 def plant_duplicate_work_orders(work_orders, eligible, n, rng):
@@ -126,15 +116,6 @@ def find_windows(tables: dict[str, pd.DataFrame]) -> Windows:
     else:
         eligible["missing_defect_code"] = eligible["orphan_inspections"] = ins.index[:0]
 
-    # Catch-up: Ridgeline regular lots received within a few weeks of the first emergency lot.
-    if len(emergency):
-        lo = rec_day[emergency.index].min()
-        hi = lo + pd.Timedelta(weeks=cfg.CATCH_UP_WEEKS)
-        mask = (rec["supplier_id"] == cfg.RIDGELINE) & rec_day.between(lo, hi) & ~rec["lot_id"].str.startswith(cfg.SUBSTITUTE_LOT_PREFIX)
-        eligible["over_receipt"], ranges["over_receipt"] = rec.index[mask], (str(lo.date()), str(hi.date()))
-    else:
-        eligible["over_receipt"] = rec.index[:0]
-
     # Avionics queue: from the first week its mean wait for the station exceeds the threshold.
     order = {s.code: i for i, s in enumerate(cfg.STATIONS)}
     flow = wo.assign(seq=wo["station_code"].map(order)).sort_values(["serial_number", "seq"])
@@ -175,8 +156,6 @@ def plant_errors(
         out["inspections"], windows.eligible["missing_defect_code"], counts["missing_defect_code"], rng)
     out["inspections"], key["orphan_inspections"] = plant_orphan_inspections(
         out["inspections"], windows.eligible["orphan_inspections"], counts["orphan_inspections"], rng)
-    out["receiving"], key["over_receipt"] = plant_over_receipt(
-        out["receiving"], windows.eligible["over_receipt"], counts["over_receipt"], rng)
 
     # End-before-start and duplicates both touch Avionics work orders, so they must not pick the same row:
     # choose the duplicates first, then exclude their originals from the end-before-start candidates.
@@ -189,10 +168,6 @@ def plant_errors(
     still_eligible = windows.eligible["end_before_start"].difference(originals)
     out["work_orders"], key["end_before_start"] = plant_end_before_start(
         work_orders, still_eligible, counts["end_before_start"], rng)
-
-    # The reconciliation check sees an over-receipt from the stock side: the parts whose shipments were corrupted.
-    receiving = out["receiving"]
-    key["stock_does_not_reconcile"] = sorted(set(receiving.loc[receiving["shipment_id"].isin(key["over_receipt"]), "part_id"]))
 
     for guard in cfg.GUARD_CHECKS:
         key[guard] = []

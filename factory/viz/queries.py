@@ -44,7 +44,7 @@ def quality() -> dict[str, pd.DataFrame]:
 
 
 def inventory() -> dict[str, pd.DataFrame]:
-    perf = query("SELECT supplier_id, supplier_name, shipments_received, on_time_rate, in_full_rate, otif_rate, quantity_unverified, "
+    perf = query("SELECT supplier_id, supplier_name, shipments_received, on_time_rate, in_full_rate, otif_rate, "
                  "avg_days_late, p90_days_late FROM v_supplier_performance ORDER BY otif_rate")
     return {
         "risk": query("SELECT * FROM v_inventory_risk ORDER BY cushion_days ASC NULLS LAST"),
@@ -68,8 +68,6 @@ def data_quality() -> dict[str, pd.DataFrame]:
                'Inspections for a drone with no work order at that station dropped. Failures with no usable defect code are kept and labelled UNCODED.'
         UNION ALL SELECT 'Inventory snapshots', (SELECT COUNT(*) FROM raw_inventory_snapshots), (SELECT COUNT(*) FROM clean_inventory_snapshots),
                (SELECT COUNT(*) FROM clean_inventory_snapshots WHERE repaired), 'Negative readings replaced by the last good reading for that part and location.'
-        UNION ALL SELECT 'Receiving', (SELECT COUNT(*) FROM raw_receiving), (SELECT COUNT(*) FROM clean_receiving),
-               (SELECT COUNT(*) FROM clean_receiving WHERE qty_capped), 'Over-received quantities capped at the expected quantity; they earn no in-full credit.'
     """)
     return {"results": results, "impact": impact}
 

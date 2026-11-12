@@ -255,22 +255,6 @@ def test_a_negative_stock_reading_is_replaced_by_the_last_good_one(tiny):
     assert rows(tiny, "SELECT MIN(on_hand) FROM clean_inventory_snapshots") == [(0,)]
 
 
-def test_an_over_received_shipment_is_kept_with_the_quantity_capped(tiny):
-    tiny.execute("INSERT INTO raw_receiving VALUES ('S6', 'LOT-F', 'SUP-02', 'P2', '2026-02-28', '2026-03-05', '2026-03-05', 100, 130)")
-    assert rows(tiny, "SELECT qty_received, qty_capped FROM clean_receiving WHERE shipment_id = 'S6'") == [(100, True)]
-    assert rows(tiny, "SELECT qty_capped FROM clean_receiving WHERE shipment_id = 'S4'") == [(False,)]
-    # The shipment still counts toward on-time, and as in full (never as better than in full).
-    # The shipment still counts toward on-time, but its quantity cannot be trusted, so it is left out of in-full and OTIF.
-    assert rows(tiny, "SELECT shipments_received, on_time_rate, in_full_rate, otif_rate, quantity_unverified FROM v_supplier_performance WHERE supplier_id = 'SUP-02'") == [(2, 1.0, 1.0, 1.0, 1)]
-
-
-def test_a_capped_shipment_cannot_flatter_a_supplier_that_was_really_short(tiny):
-    """The shipment arrived late and its recorded quantity is over the expected one. Whatever the truth was, it earns no credit."""
-    tiny.execute("INSERT INTO raw_receiving VALUES ('S6', 'LOT-F', 'SUP-02', 'P2', '2026-02-28', '2026-03-05', '2026-03-07', 100, 130)")
-    got = rows(tiny, "SELECT shipments_received, on_time_rate, in_full_rate, otif_rate, quantity_unverified FROM v_supplier_performance WHERE supplier_id = 'SUP-02'")
-    assert got == [(2, 0.5, 1.0, 1.0, 1)]   # late counts against it; only S4 speaks for quantity
-
-
 def test_pre_launch_shipments_are_flagged(tiny):
     assert rows(tiny, "SELECT shipment_id FROM clean_receiving WHERE is_pre_launch") == [("S0",)]
 
@@ -331,13 +315,11 @@ def test_supplier_performance_matches_pandas_on_the_clean_data(built):
     late = (pd.to_datetime(r["received_date"]) - pd.to_datetime(r["expected_date"])).dt.days.clip(lower=0)
     r["on_time"], r["in_full"] = late == 0, r["qty_received"].astype(float) >= r["qty_expected"]
     r["late"] = late
-    # The over-received shipments are the ones whose quantity cannot be trusted, so they are left out of in-full and OTIF.
-    trusted = ~r["shipment_id"].isin(data.answer_key["over_receipt"])
     r["otif_ok"] = r["on_time"] & r["in_full"]
     want = r.groupby("supplier_id").agg(n=("shipment_id", "size"), on_time=("on_time", "mean"), avg_late=("late", "mean"),
                                         p90=("late", lambda s: np.percentile(s, 90)))
-    want["in_full"] = r[trusted].groupby("supplier_id")["in_full"].mean()
-    want["otif"] = r[trusted].groupby("supplier_id")["otif_ok"].mean()
+    want["in_full"] = r.groupby("supplier_id")["in_full"].mean()
+    want["otif"] = r.groupby("supplier_id")["otif_ok"].mean()
     got = sql_frame(conn, "SELECT supplier_id, shipments_received, on_time_rate, in_full_rate, otif_rate, avg_days_late, p90_days_late FROM v_supplier_performance").set_index("supplier_id")
     assert list(got.index) and set(got.index) == set(want.index)
     for sup in want.index:
@@ -442,5 +424,4 @@ def test_the_clean_layer_changes_exactly_what_the_policy_says(built):
     assert count("SELECT COUNT(*) FROM clean_inspections WHERE code_was_missing") == len(data.answer_key["missing_defect_code"])
     assert count("SELECT COUNT(*) FROM clean_inventory_snapshots WHERE repaired") == len(data.answer_key["negative_inventory"])
     assert count("SELECT MIN(on_hand) FROM clean_inventory_snapshots") == 0
-    assert count("SELECT COUNT(*) FROM clean_receiving WHERE qty_capped") == len(data.answer_key["over_receipt"])
     assert count("SELECT COUNT(*) FROM clean_receiving WHERE qty_received > qty_expected") == 0

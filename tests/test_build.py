@@ -33,7 +33,7 @@ def test_the_planted_errors_are_really_in_the_database(built):
     count = lambda sql, *args: conn.execute(sql, args).fetchone()[0]
     assert count("SELECT COUNT(*) FROM raw_inventory_snapshots WHERE on_hand < 0") == len(key["negative_inventory"])
     assert count("SELECT COUNT(*) FROM raw_work_orders WHERE end_ts < start_ts") == len(key["end_before_start"])
-    assert count("SELECT COUNT(*) FROM raw_receiving WHERE qty_received > qty_expected") == len(key["over_receipt"])
+    assert count("SELECT COUNT(*) FROM raw_receiving WHERE qty_received > qty_expected") == 0
     assert count("SELECT COUNT(*) FROM raw_work_orders WHERE wo_id = ANY(%s)", key["duplicate_work_orders"]) == len(key["duplicate_work_orders"])
     assert count("SELECT COUNT(*) FROM raw_inspections WHERE result = 'FAIL' AND (defect_code IS NULL OR TRIM(defect_code) = '')") == len(key["missing_defect_code"])
     assert count("""SELECT COUNT(*) FROM raw_inspections i

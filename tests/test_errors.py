@@ -8,7 +8,7 @@ import pytest
 from factory import config as cfg
 from factory.errors import (
     Windows, plant_errors, plant_duplicate_work_orders, plant_end_before_start, plant_missing_defect_code,
-    plant_negative_inventory, plant_orphan_inspections, plant_over_receipt,
+    plant_negative_inventory, plant_orphan_inspections,
 )
 from factory.generate import generate
 
@@ -73,14 +73,6 @@ def test_orphan_inspections_point_at_drones_that_do_not_exist():
     assert not set(changed["serial_number"]) & set(df["serial_number"])
 
 
-def test_over_receipt_is_twenty_to_fifty_percent_over():
-    df = pd.DataFrame({"shipment_id": [f"SHP-{i}" for i in range(6)], "qty_expected": [100] * 6, "qty_received": pd.array([100] * 6, dtype="Int64")})
-    out, keys = plant_over_receipt(df, df.index, 4, rng())
-    over = out[out["shipment_id"].isin(keys)]["qty_received"]
-    assert len(keys) == 4 and over.between(120, 150).all()
-    assert (out[~out["shipment_id"].isin(keys)]["qty_received"] == 100).all()
-
-
 WORK_ORDERS = pd.DataFrame({
     "wo_id": [f"WO-{i:06d}" for i in range(1, 6)],
     "serial_number": [f"DF-{i:06d}" for i in range(1, 6)],
@@ -131,7 +123,7 @@ def test_the_answer_key_has_the_agreed_counts_and_empty_guards(data):
         assert len(set(data.answer_key[name])) == count
     for guard in cfg.GUARD_CHECKS:
         assert data.answer_key[guard] == []
-    assert set(data.answer_key) == set(PLANTED) | set(cfg.GUARD_CHECKS) | {"stock_does_not_reconcile"}
+    assert set(data.answer_key) == set(PLANTED) | set(cfg.GUARD_CHECKS)
 
 
 def test_only_the_planted_snapshot_rows_differ_and_only_by_sign(data):
@@ -155,12 +147,11 @@ def test_only_the_planted_inspections_differ(data):
     assert clean[other].equals(dirty[other])
 
 
-def test_only_the_planted_shipments_differ(data):
-    clean, dirty = data.clean["receiving"], data.tables["receiving"]
-    changed = clean["qty_received"].fillna(-1) != dirty["qty_received"].fillna(-1)
-    assert sorted(clean.loc[changed, "shipment_id"]) == data.answer_key["over_receipt"]
-    assert (dirty.loc[changed, "qty_received"] > dirty.loc[changed, "qty_expected"]).all()
-    assert (clean["qty_received"].dropna() > clean.loc[clean["qty_received"].notna(), "qty_expected"]).sum() == 0
+def test_receiving_is_untouched_and_no_shipment_arrives_over_the_expected_quantity(data):
+    receiving = data.tables["receiving"]
+    assert receiving.equals(data.clean["receiving"])
+    got = receiving.dropna(subset=["qty_received"])
+    assert (got["qty_received"] <= got["qty_expected"]).all()
 
 
 def test_work_orders_differ_only_by_the_copies_and_the_reversed_end_times(data):
@@ -198,8 +189,6 @@ def test_the_planted_rows_sit_in_the_story_windows(data):
     assert (ins.loc[data.answer_key["missing_defect_code"], "station_code"] == "MTR").all()
     assert (ins.loc[data.answer_key["missing_defect_code"], "result"] == "FAIL").all()
     assert (ins.loc[data.answer_key["orphan_inspections"], "attempt"] == 2).all()
-    rec = data.clean["receiving"].set_index("shipment_id")
-    assert (rec.loc[data.answer_key["over_receipt"], "supplier_id"] == cfg.RIDGELINE).all()
     wo = data.clean["work_orders"].set_index("wo_id")
     assert (wo.loc[data.answer_key["end_before_start"], "station_code"] == "AVN").all()
 

@@ -7,7 +7,6 @@
 --   inspections    inspections for a drone with no work order at that station are dropped; failures with no
 --                  usable defect code are KEPT and labelled <station>-UNCODED
 --   inventory      a negative reading is replaced by the last good reading for that part and location
---   receiving      an over-received shipment is KEPT with the quantity capped at what was expected
 -- Tables with no planted errors pass straight through so the app only ever reads clean_* and v_* names.
 
 -- Reference dates, found from the data itself.
@@ -94,7 +93,6 @@ SELECT
     expected_date,
     received_date,
     qty_expected,
-    CASE WHEN qty_received > qty_expected THEN qty_expected ELSE qty_received END AS qty_received,
-    COALESCE(qty_received > qty_expected, FALSE) AS qty_capped,
+    qty_received,
     COALESCE(received_date < (SELECT launch_date FROM v_calendar), FALSE) AS is_pre_launch
 FROM raw_receiving;

@@ -101,14 +101,14 @@ def test_the_data_quality_page_reports_the_scores_and_what_cleaning_did(database
     at = page(monkeypatch, database)
     assert not at.exception and at.title[0].value == "Data Quality"
     text = " ".join(m.value for m in at.markdown)
-    assert "38 of 38 planted errors were caught" in text and "0 missed and 0 false positives across 25 scored checks" in text
-    assert "38 rows were dropped, repaired or relabelled" in text and "15 dropped and 23 kept with a fix" in text
+    assert "35 of 35 planted errors were caught" in text and "0 missed and 0 false positives across 24 scored checks" in text
+    assert "35 rows were dropped, repaired or relabelled" in text and "15 dropped and 20 kept with a fix" in text
     assert [s.value for s in at.subheader] == ["What the checks caught", "All checks", "Flagged records", "What cleaning changed",
                                               "What the bad data would have hidden"]
     behind_the_chart = at.dataframe[0].value                                                             # the chart's table view
-    assert len(behind_the_chart) == 7 and not any(behind_the_chart[c].dtype.kind == "f" for c in ("Planted rows", "Caught", "Missed"))
+    assert len(behind_the_chart) == 5 and not any(behind_the_chart[c].dtype.kind == "f" for c in ("Planted rows", "Caught", "Missed"))
     scoreboard = at.dataframe[1].value
-    assert len(scoreboard) == 26 and list(scoreboard.columns) == ["Check", "Type", "Flagged", "Planted", "Caught", "Missed", "False positives"]
+    assert len(scoreboard) == 25 and list(scoreboard.columns) == ["Check", "Type", "Flagged", "Planted", "Caught", "Missed", "False positives"]
     assert scoreboard.loc[scoreboard["Check"] == "duplicate_work_orders", "Planted"].iloc[0] == "12"        # whole numbers, not 12.0
     assert scoreboard.loc[scoreboard["Check"] == "overdue_open_shipments", "Planted"].iloc[0] == "-"        # not scored
     for col in ("Planted", "Caught", "Missed", "False positives"):

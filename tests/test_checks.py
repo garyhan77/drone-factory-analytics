@@ -20,10 +20,9 @@ def test_every_check_file_has_valid_headers_and_the_expected_mix():
     by_category = {}
     for c in CHECKS.values():
         by_category.setdefault(c.category, []).append(c.name)
-    assert {k: len(v) for k, v in by_category.items()} == {"planted": 6, "reconciliation": 1, "guard": 5, "sanity": 13, "operational": 1}
+    assert {k: len(v) for k, v in by_category.items()} == {"planted": 5, "guard": 6, "sanity": 13, "operational": 1}
     assert set(by_category["planted"]) == set(cfg.PLANTED_COUNTS)
     assert set(by_category["guard"]) == set(cfg.GUARD_CHECKS)
-    assert by_category["reconciliation"] == ["stock_does_not_reconcile"]
     assert CHECKS["overdue_open_shipments"].severity == "warn"
     assert all(c.severity == "error" for c in CHECKS.values() if c.category != "operational")
 
@@ -103,9 +102,6 @@ CASES = {
                              {"orphan_inspections": ["I9"]}),
     "orphan_wrong_station": ("INSERT INTO raw_inspections VALUES ('I9', 'DF-000002', 'FNT', 1, '2026-03-02 12:00', 'PASS', NULL)",
                              {"orphan_inspections": ["I9"]}),
-    "over_receipt": ("INSERT INTO raw_receiving VALUES ('S2', 'LOT-2', 'SUP-01', 'P1', '2026-02-01', '2026-02-11', '2026-02-12', 100, 130)",
-                     # the 130 received never reached stock or drones, so the part no longer reconciles either
-                     {"over_receipt": ["S2"], "stock_does_not_reconcile": ["P1"]}),
     "duplicate_work_order": ("INSERT INTO raw_work_orders VALUES ('WO9', 'DF-000001', 'AAA', '2026-03-02 08:00', '2026-03-02 11:00', 'COMPLETE')",
                              {"duplicate_work_orders": ["WO9"]}),  # the copy, not the original WO1
     "two_copies_of_one_work_order": ("INSERT INTO raw_work_orders VALUES ('WO8', 'DF-000001', 'AAA', '2026-03-02 08:00', '2026-03-02 11:00', 'COMPLETE'), "
@@ -232,12 +228,10 @@ def test_every_planted_error_is_caught_with_no_false_positives(test_url):
 def test_results_and_the_answer_key_are_stored_in_the_database(test_url):
     data = build(url=test_url, write_files=False)
     with connect(test_url) as conn:
-        assert conn.execute("SELECT COUNT(*) FROM dq_results").fetchone()[0] == 26
+        assert conn.execute("SELECT COUNT(*) FROM dq_results").fetchone()[0] == 25
         assert conn.execute("SELECT COUNT(*) FROM dq_answer_key").fetchone()[0] == sum(len(v) for v in data.answer_key.values())
         stored = {r[0] for r in conn.execute("SELECT record_key FROM dq_answer_key WHERE check_name = 'stock_does_not_reconcile'").fetchall()}
-        receiving = data.tables["receiving"]
-        parts_behind_the_over_receipts = set(receiving.loc[receiving["shipment_id"].isin(data.answer_key["over_receipt"]), "part_id"])
-        assert stored == parts_behind_the_over_receipts and len(stored) >= 1
+        assert stored == set()   # nothing is planted into receiving, so every part reconciles
         assert conn.execute("SELECT SUM(caught) FROM dq_results WHERE category = 'planted'").fetchone()[0] == sum(cfg.PLANTED_COUNTS.values())
         assert conn.execute("SELECT COUNT(*) FROM dq_flagged").fetchone()[0] == sum(len(v) for v in data.answer_key.values())
 
