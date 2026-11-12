@@ -32,9 +32,9 @@ chart(charts.cushion_chart(urgent, pal), risk[["Status", "part_id", "part_name",
 
 st.subheader("Supplier delivery performance")
 chart(charts.horizontal_bar(perf["supplier_name"], perf["otif_rate"] * 100, pal, highlight=regular.sort_values("otif_rate")["supplier_name"].iloc[0], unit="%"),
-      perf.rename(columns={"supplier_id": "ID", "supplier_name": "Supplier", "shipments_received": "Shipments", "on_time_rate": "On time",
+      perf.drop(columns=["p90_days_late"]).rename(columns={"supplier_id": "ID", "supplier_name": "Supplier", "shipments_received": "Shipments", "on_time_rate": "On time",
                            "in_full_rate": "In full", "otif_rate": "On time and in full",
-                           "avg_days_late": "Average days late", "p90_days_late": "90th percentile days late"}), key="suppliers",
+                           "avg_days_late": "Average days late"}), key="suppliers",
       caption="On time means received on or before the expected date; in full means at least the expected quantity arrived. "
       "The spot-buy distributor is only used in emergencies and is left out of the comparison in the text above.")
 
