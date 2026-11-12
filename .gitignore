@@ -8,3 +8,8 @@ data/
 PLAN.md
 
 .streamlit/secrets.toml
+
+# local-only statistical analysis (not published)
+analysis/
+tests/test_analysis_*.py
+tests/fixtures/

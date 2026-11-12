@@ -64,7 +64,7 @@ def check_readonly(url: str) -> list[Check]:
     """Connect as the app's role and verify it can read, and cannot write, create or drop anything."""
     checks: list[Check] = []
     with psycopg.connect(url, autocommit=True, connect_timeout=30) as conn:
-        for label, table in (("a raw table", "raw_work_orders"), ("a metric view", "v_station_summary")):
+        for label, table in (("a raw table", "raw_work_orders"), ("a metric view", "v_deliveries")):
             try:
                 count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
                 checks.append(Check(f"can read {label}", count > 0, f"{count:,} rows in {table}"))

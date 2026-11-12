@@ -76,7 +76,7 @@ def test_created_role_is_read_only_and_verification_passes(conn, monkeypatch):
     password = "a-long-test-password-123"
     try:
         create_readonly_role(admin, ROLE, password)
-        build(url=url, write_files=False, grant_to=ROLE)
+        build(url=url, grant_to=ROLE)
         info = admin.info
         ro_url = f"postgresql://{ROLE}:{password}@{info.host}:{info.port}/{info.dbname}"
         checks = check_readonly(ro_url)
@@ -95,7 +95,7 @@ def test_verification_fails_for_a_role_that_can_write(conn):
     url = os.environ["TEST_DATABASE_URL"]
     conn.close()
     # the admin connection itself is NOT read-only, so the check must say so
-    build(url=url, write_files=False)
+    build(url=url)
     checks = {c.name: c for c in check_readonly(url)}
     assert not checks["INSERT is refused"].passed
     assert not checks["is read-only by default"].passed

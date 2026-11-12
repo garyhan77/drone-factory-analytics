@@ -35,7 +35,7 @@ Live app: https://drone-factory-analytics.streamlit.app/
    ```
    DATABASE_URL = "postgresql://app_readonly:...@...neon.tech/...?sslmode=require"
    ```
-5. Open the live link in a private window and click through all five pages.
+5. Open the live link in a private window and click through all three pages.
 
 ## Rebuilding
 

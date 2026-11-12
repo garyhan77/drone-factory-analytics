@@ -12,9 +12,7 @@ st.set_page_config(page_title="Drone Factory Analytics", page_icon="🛩️", la
 
 pages = [
     st.Page("views/overview.py", title="Overview", default=True),
-    st.Page("views/production.py", title="Production"),
     st.Page("views/quality.py", title="Quality & Traceability"),
     st.Page("views/inventory.py", title="Inventory & Suppliers"),
-    st.Page("views/data_quality.py", title="Data Quality"),
 ]
 st.navigation(pages).run()

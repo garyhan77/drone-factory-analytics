@@ -1,4 +1,3 @@
-import pandas as pd
 import streamlit as st
 
 from factory import config as cfg
@@ -8,49 +7,26 @@ from factory.viz.data import query
 from factory.viz.render import chart, current_palette, page_header
 
 pal = current_palette()
-page_header("Quality & Traceability", "Quality engineer", "Why did yield drop, and which drones are affected?")
+page_header("Quality & Traceability", "Quality engineer", "Which lots are failing inspection, and which drones are affected?")
 
 data = queries.quality()
-weekly, pareto, lots, flagged, recall_all = data["weekly"], data["pareto"], data["lots"], data["flagged"], data["recall"]
+lots, flagged, recall_all = data["lots"], data["flagged"], data["recall"]
 
-for sentence in findings.quality_finding(weekly, lots, recall_all):
+for sentence in findings.quality_finding(lots, recall_all):
     st.markdown(sentence)
-
-summary = findings.station_yield_summary(weekly)
-stations = list(weekly.sort_values("station_seq")["station_name"].unique())
-default = summary.loc[summary["z"].idxmin(), "station_name"] if len(summary) else stations[0]
-station = st.selectbox("Station", stations, index=stations.index(default),
-                       help="Scopes the yield chart and which defect codes are highlighted.")
-code = weekly.loc[weekly["station_name"] == station, "station_code"].iloc[0]
-
-st.subheader(f"First-pass yield at {station}, by week")
-mine = weekly[weekly["station_name"] == station]
-overall = mine["passes"].sum() / mine["inspections"].sum()
-chart(charts.yield_chart(mine, overall, pal), mine[["week_start", "inspections", "passes", "fpy"]].rename(columns={
-    "week_start": "Week of", "inspections": "Inspections", "passes": "Passed first time", "fpy": "Yield"}), key="yield",
-    caption="First attempts only: a drone that fails and passes after rework still counts as a first-pass failure. "
-    "The vertical axis starts below 100% so the dips are visible.")
-
-st.subheader("Which defects?")
-top = pareto.head(10)
-uncoded = int(pareto.loc[pareto["defect_code"].str.endswith("UNCODED"), "fails"].sum())
-chart(charts.horizontal_bar(top["defect_code"], top["fails"], pal, highlight=set(top.loc[top["station_code"] == code, "defect_code"])),
-      top.drop(columns=["cum_pct"]).rename(columns={"station_code": "Station", "defect_code": "Defect code", "fails": "Failures",
-                                                    "pct_of_fails": "Share of all failures"}), key="pareto",
-      caption=f"The ten most common first-attempt failures. Codes at {station} are in colour. "
-      f"{uncoded} failures were recorded with no usable defect code; they are kept and labelled UNCODED, not dropped.")
 
 st.subheader("Which lots?")
 eligible = lots[lots["drones_inspected"] >= findings.LOT_MIN_DRONES].head(12).copy()
 eligible["is_emergency"] = eligible["supplier_id"] == cfg.SPOT_BUY
 labelled = eligible.assign(lot_id=eligible["lot_id"] + "  (" + eligible["part_name"] + ")")   # the chart names the part next to the lot
-chart(charts.lot_lift_chart(labelled, pal, flag_at=findings.LOT_MIN_LIFT), eligible.assign(part_id=eligible["part_id"] + " " + eligible["part_name"])[["lot_id", "part_id", "supplier_name", "drones_inspected", "fails", "fail_rate",
-                                                       "station_fail_rate", "lift"]].rename(columns={
+chart(charts.lot_failure_chart(labelled, pal, flag_at=findings.LOT_MIN_FAIL_RATE),
+      eligible.assign(part_id=eligible["part_id"] + " " + eligible["part_name"])[["lot_id", "part_id", "supplier_name", "drones_inspected", "fails",
+                                                                                 "fail_rate"]].rename(columns={
     "lot_id": "Lot", "part_id": "Part", "supplier_name": "Supplier", "drones_inspected": "Drones inspected", "fails": "Failed",
-    "fail_rate": "Failure rate", "station_fail_rate": "Station rate", "lift": "Times the station rate"}), key="lots",
-    caption=f"Each bar is a lot's first-attempt failure rate divided by the average failure rate of its station. Lots with fewer than "
-    f"{findings.LOT_MIN_DRONES} inspected drones are left out, and a lot is flagged at {findings.LOT_MIN_LIFT:.0f} times or more. "
-    "A regular lot can look elevated if it went into the same drones as an emergency lot.")
+    "fail_rate": "Failure rate"}), key="lots",
+    caption=f"Each bar is the share of a lot's drones that failed inspection at the station where the lot was installed. A drone counts as "
+    f"failed even if it passed after rework. Lots with fewer than {findings.LOT_MIN_DRONES} inspected drones are left out, and a lot is "
+    f"flagged at {findings.LOT_MIN_FAIL_RATE:.0%} or more. A regular lot can look elevated if it went into the same drones as an emergency lot.")
 
 st.subheader("Recall scope")
 choices = list(flagged["lot_id"]) or list(eligible["lot_id"])
@@ -65,20 +41,12 @@ if choices:
     right.metric("Still in the line", int(scope["still_in_the_line"]))
     st.caption(f"{int(scope['drones_containing_lot'])} drones contain {lot} ({part_of[lot]}), installed between {scope['first_installed']:%d %b} and "
                f"{scope['last_installed']:%d %b %Y}.")
-    flagged_ids = list(flagged["lot_id"])
-    both = query("SELECT COUNT(*) AS n FROM (SELECT serial_number FROM clean_drone_part_lots WHERE lot_id = ANY(%s) "
-                 "GROUP BY serial_number HAVING COUNT(DISTINCT lot_id) > 1) t", (flagged_ids,)).iloc[0]["n"]
-    if both and len(recall_all):
-        st.caption(f"Across all {len(flagged_ids)} flagged lots, {int(recall_all['drones'].iloc[0])} different drones are affected. {int(both)} of them "
-                   f"contain more than one flagged lot, so the lot counts add up to more than that. The table below shows which.")
     drones = query(
         "SELECT l.serial_number AS \"Drone\", w.start_ts::date AS \"Installed\", "
         "CASE WHEN f.shipped_ts IS NOT NULL THEN 'Shipped' WHEN f.serial_number IS NOT NULL THEN 'Packed, waiting' "
-        "ELSE 'Still in the line' END AS \"Where it is\", f.shipped_ts::date AS \"Shipped on\", "
-        "(SELECT string_agg(o.lot_id, ', ' ORDER BY o.lot_id) FROM clean_drone_part_lots o WHERE o.serial_number = l.serial_number "
-        "AND o.lot_id = ANY(%s) AND o.lot_id <> l.lot_id) AS \"Also contains (other flagged lots)\" "
-        "FROM clean_drone_part_lots l JOIN clean_work_orders w ON w.serial_number = l.serial_number AND w.station_code = l.station_code "
-        "LEFT JOIN clean_finished_goods f ON f.serial_number = l.serial_number WHERE l.lot_id = %s ORDER BY 2, 1", (flagged_ids, lot))
+        "ELSE 'Still in the line' END AS \"Where it is\", f.shipped_ts::date AS \"Shipped on\" "
+        "FROM raw_drone_part_lots l JOIN raw_work_orders w ON w.serial_number = l.serial_number AND w.station_code = l.station_code "
+        "LEFT JOIN raw_finished_goods f ON f.serial_number = l.serial_number WHERE l.lot_id = %s ORDER BY 2, 1", (lot,))
     with st.expander("Table view: every drone containing this lot"):
         st.dataframe(drones, hide_index=True, width="stretch")
 else:

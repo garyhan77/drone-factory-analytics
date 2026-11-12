@@ -116,7 +116,7 @@ def database():
         pytest.skip("TEST_DATABASE_URL is not set")
     if not url.rstrip("/").rsplit("/", 1)[-1].endswith("_test"):
         pytest.fail(f"TEST_DATABASE_URL must point at a database ending in _test, got: {url}")
-    build(url=url, write_files=False)
+    build(url=url)
     return url
 
 

@@ -94,13 +94,13 @@ def test_every_finished_drone_passed_final_test(line_and_goods):
     assert set(fg["serial_number"]) <= set(inspections["serial_number"])
 
 
-def test_the_delay_is_upstream_lead_time_grows_while_dwell_after_test_stays_flat(line_and_goods):
+def test_lead_time_and_dwell_stay_steady(line_and_goods):
     line, fg = line_and_goods
     start = line.work_orders[line.work_orders["station_code"] == cfg.STATIONS[0].code].set_index("serial_number")["start_ts"]
     shipped = fg.dropna(subset=["shipped_ts"]).copy()
     shipped["lead_days"] = (shipped["shipped_ts"] - shipped["serial_number"].map(start)).dt.total_seconds() / 86400
     shipped["dwell_days"] = (shipped["shipped_ts"] - shipped["test_passed_ts"]).dt.total_seconds() / 86400
     shipped["week"] = ((shipped["shipped_ts"] - pd.Timestamp(cfg.START)).dt.days // 7) + 1
-    early, late = shipped[shipped["week"].between(4, 9)], shipped[shipped["week"].between(20, 25)]
-    assert late["lead_days"].mean() > 1.5 * early["lead_days"].mean()  # lead time grows with the Avionics queue
+    early, late = shipped[shipped["week"].between(3, 5)], shipped[shipped["week"].between(8, 11)]
+    assert late["lead_days"].mean() == pytest.approx(early["lead_days"].mean(), rel=0.5)  # no bottleneck, so no growing delay
     assert late["dwell_days"].mean() == pytest.approx(early["dwell_days"].mean(), rel=0.25)  # dwell after test does not

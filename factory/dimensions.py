@@ -26,6 +26,10 @@ def launch_drones_per_day() -> float:
     return sum(weekly) / len(weekly) / 7
 
 
+def safety_days(supplier_id: str) -> int:
+    return cfg.RIDGELINE_SAFETY_DAYS if supplier_id == cfg.RIDGELINE else cfg.REORDER_SAFETY_DAYS
+
+
 def build_suppliers() -> pd.DataFrame:
     return pd.DataFrame(
         [(s.supplier_id, s.name) for s in cfg.SUPPLIERS],
@@ -45,7 +49,7 @@ def build_parts() -> pd.DataFrame:
             "part_name": part.name,
             "supplier_id": part.supplier_id,
             "unit_cost": part.unit_cost,
-            "reorder_point": math.ceil(daily_demand * (lead_days + cfg.REORDER_SAFETY_DAYS)),
+            "reorder_point": math.ceil(daily_demand * (lead_days + safety_days(part.supplier_id))),
             "lead_time_days": lead_days,
         })
     return pd.DataFrame(rows)

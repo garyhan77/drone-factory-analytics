@@ -1,6 +1,4 @@
--- PostgreSQL. Raw tables, deliberately without constraints: real ERP/MES extracts arrive
--- with duplicates and broken references, and the data quality checks exist
--- to find them.
+-- PostgreSQL. Raw tables, loaded as generated.
 
 DROP TABLE IF EXISTS raw_stations CASCADE;
 CREATE TABLE raw_stations (

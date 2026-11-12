@@ -1,6 +1,6 @@
 PY := .venv/bin/python
 
-.PHONY: setup schema views build build-remote create-readonly-role verify-hosting checks run test analysis analysis-test
+.PHONY: setup schema views build build-remote create-readonly-role verify-hosting run test
 
 setup:
 	python3 -m venv .venv
@@ -25,21 +25,8 @@ create-readonly-role:
 verify-hosting:
 	$(PY) -m factory.hosting verify
 
-checks:
-	$(PY) -m factory.checks
-
 run:
 	.venv/bin/streamlit run app/Home.py
 
 test:
 	$(PY) -m pytest -q
-
-# Statistical analysis layer (see analysis/README.md); needs no database.
-analysis:
-	$(PY) -W ignore -m analysis.causal
-	$(PY) -W ignore -m analysis.regression
-	$(PY) -W ignore -m analysis.experiment pilot
-	$(PY) -W ignore -m analysis.experiment run
-
-analysis-test:
-	$(PY) -m pytest -q tests/test_analysis_*.py

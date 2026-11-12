@@ -59,41 +59,8 @@ def line_trace(x, y, name: str, colour: str, pal: Palette, *, end_dot: bool = Tr
     )
 
 
-# ---------------------------------------------------------------------------- Production
-
-from plotly.subplots import make_subplots  # noqa: E402
 
 
-def weekly_output_chart(df, pal: Palette) -> go.Figure:
-    """Drones started and finished each week: two series that are both the subject, so two colours and a legend."""
-    fig = go.Figure([
-        line_trace(df["week_start"], df["units_started"], "Started", pal.accent, pal, hover="%{y} drones"),
-        line_trace(df["week_start"], df["units_completed"], "Finished", pal.accent_2, pal, hover="%{y} drones"),
-    ])
-    style(fig, pal, height=340, legend=True)
-    fig.update_yaxes(title_text="Drones per week", rangemode="tozero")
-    return fig
-
-
-def wait_small_multiples(df, pal: Palette, highlight: str) -> go.Figure:
-    """Average wait before each station, one small panel per station on a shared scale.
-
-    The highlighted station is the point (accent colour); the others are context (grey), so no legend is needed:
-    each panel is titled with its station.
-    """
-    stations = list(df.sort_values("station_seq")["station_name"].unique())
-    fig = make_subplots(rows=1, cols=len(stations), shared_yaxes=True, subplot_titles=stations, horizontal_spacing=0.025)
-    for col, name in enumerate(stations, start=1):
-        part = df[df["station_name"] == name].sort_values("week_start")
-        colour = pal.accent if name == highlight else pal.context
-        fig.add_trace(line_trace(part["week_start"], part["avg_wait_hours"], name, colour, pal, hover="%{y:.0f} hours"), row=1, col=col)
-    style(fig, pal, height=330, hovermode="x")
-    fig.update_layout(margin=dict(l=8, r=16, t=44, b=8))  # room for the panel titles
-    fig.update_yaxes(title_text="Average wait before the station (hours)", row=1, col=1, rangemode="tozero")
-    fig.update_xaxes(tickformat="%b", nticks=4)
-    for ann in fig.layout.annotations:  # panel titles in quiet ink, left aligned
-        ann.update(font=dict(color=pal.ink_secondary, size=13), xanchor="left", x=ann.x - 0.07)
-    return fig
 
 
 def horizontal_bar(labels, values, pal: Palette, highlight=None, *, unit: str = "") -> go.Figure:
@@ -116,105 +83,33 @@ def horizontal_bar(labels, values, pal: Palette, highlight=None, *, unit: str = 
     return fig
 
 
-def lead_dwell_chart(df, pal: Palette) -> go.Figure:
-    """Lead time (first station to shipped) against dwell (test passed to shipped), per week of shipping."""
-    fig = go.Figure([
-        line_trace(df["week_start"], df["avg_lead_days"], "Lead time", pal.accent, pal, hover="%{y:.1f} days"),
-        line_trace(df["week_start"], df["avg_dwell_days"], "Dwell after test", pal.accent_2, pal, hover="%{y:.1f} days"),
-    ])
-    style(fig, pal, height=320, legend=True)
-    fig.update_yaxes(title_text="Days (weekly average)", rangemode="tozero")
-    return fig
 
 
 # ---------------------------------------------------------------------------- Quality & Traceability
 
-import math  # noqa: E402
-
-
-def yield_chart(df, overall: float, pal: Palette) -> go.Figure:
-    """Weekly first-pass yield for one station, with its overall rate as a labelled reference line and the lowest week marked."""
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=df["week_start"], y=df["fpy"], name="First-pass yield", mode="lines", showlegend=False,
-        line=dict(color=pal.accent, width=LINE_WIDTH), customdata=df["inspections"],
-        hovertemplate="%{y:.0%} of %{customdata} inspections<extra></extra>"))
-    big = df[df["inspections"] >= 10]
-    low = big.loc[big["fpy"].idxmin()] if len(big) else df.loc[df["fpy"].idxmin()]
-    fig.add_trace(go.Scatter(
-        x=[low["week_start"]], y=[low["fpy"]], mode="markers+text", showlegend=False, hoverinfo="skip",
-        marker=dict(color=pal.accent, size=MARKER_SIZE, line=dict(color=pal.surface, width=RING_WIDTH)),
-        text=[f"Lowest: {low['fpy']:.0%}"], textposition="bottom center", textfont=dict(color=pal.ink_secondary)))
-    fig.add_hline(y=overall, line=dict(color=pal.ink_muted, width=1), annotation_text=f"Overall {overall:.0%}",
-                  annotation_position="right", annotation_font=dict(color=pal.ink_secondary, size=12))
-    style(fig, pal, height=320)
-    fig.update_layout(margin=dict(l=8, r=96, t=12, b=8))  # room for the reference label outside the plot
-    floor = max(0.0, math.floor((float(df["fpy"].min()) - 0.1) * 10 + 1e-9) / 10)  # a tenth below the lowest week; the epsilon guards float error
-    fig.update_yaxes(tickformat=".0%", range=[floor, 1.0], title_text="First-pass yield")
-    return fig
-
-
-def lot_lift_chart(df, pal: Palette, flag_at: float | None = None) -> go.Figure:
-    """How many times its station's failure rate each lot ran. Emergency lots in the accent colour, regular lots grey.
-
-    A solid reference line marks the station average (1x) and, if given, the level at which a lot is flagged.
-    """
-    df = df.sort_values("lift", ascending=False)
+def lot_failure_chart(df, pal: Palette, flag_at: float | None = None) -> go.Figure:
+    """The share of drones that failed inspection, by lot. Emergency lots in the accent colour, regular lots grey."""
+    df = df.sort_values("fail_rate", ascending=False)
     fig = go.Figure()
     for is_emergency, name, colour in ((True, "Emergency lot (spot-buy)", pal.accent), (False, "Regular lot", pal.context)):
         part = df[df["is_emergency"] == is_emergency]
         fig.add_trace(go.Bar(
-            y=part["lot_id"], x=part["lift"], name=name, orientation="h",
-            marker=dict(color=colour, cornerradius=CORNER_RADIUS), text=[f"{v:.1f}×" for v in part["lift"]],
+            y=part["lot_id"], x=part["fail_rate"] * 100, name=name, orientation="h",
+            marker=dict(color=colour, cornerradius=CORNER_RADIUS), text=[f"{v:.0%}" for v in part["fail_rate"]],
             textposition="outside", cliponaxis=False, textfont=dict(color=pal.ink_secondary),
-            customdata=part[["fails", "drones_inspected", "fail_rate", "station_fail_rate"]].to_numpy(),
-            hovertemplate="%{y}: %{x:.1f}× the station average<br>%{customdata[0]} of %{customdata[1]} drones failed "
-                          "(%{customdata[2]:.0%} against %{customdata[3]:.1%})<extra></extra>"))
+            customdata=part[["fails", "drones_inspected"]].to_numpy(),
+            hovertemplate="%{y}: %{customdata[0]} of %{customdata[1]} drones failed (%{x:.0f}%)<extra></extra>"))
     style(fig, pal, height=horizontal_bar_height(len(df), extra=64), legend=True, hovermode="closest")
     fig.update_layout(bargap=bar_gap(), barmode="overlay", margin=dict(l=8, r=56, t=36, b=8))
     fig.update_yaxes(categoryorder="array", categoryarray=list(df["lot_id"]), autorange="reversed", showgrid=False)
-    fig.update_xaxes(showgrid=False, showticklabels=False, showline=False)
-    fig.add_vline(x=1, line=dict(color=pal.ink_muted, width=1), annotation_text="Station average",
-                  annotation_position="top", annotation_font=dict(color=pal.ink_secondary, size=12))
+    fig.update_xaxes(showgrid=False, showticklabels=False, showline=False, rangemode="tozero")
     if flag_at:
-        fig.add_vline(x=flag_at, line=dict(color=pal.ink_muted, width=1), annotation_text=f"Flagged at {flag_at:.0f}×",
+        fig.add_vline(x=flag_at * 100, line=dict(color=pal.ink_muted, width=1), annotation_text=f"Flagged at {flag_at:.0%}",
                       annotation_position="top", annotation_font=dict(color=pal.ink_secondary, size=12))
     return fig
 
 
 # ---------------------------------------------------------------------------- Inventory & Suppliers
-
-from .theme import RISK, risk_label  # noqa: E402
-
-
-def cushion_chart(df, pal: Palette) -> go.Figure:
-    """Days of cushion for the most urgent parts. Negative means the stock runs out before a bad delivery arrives.
-
-    Bars wear the reserved status colours, and each status is named in the legend with its icon, so colour is never the
-    only signal.
-    """
-    df = df.reset_index(drop=True)
-    fig = go.Figure()
-    for status in RISK:
-        part = df[df["risk_status"] == status]
-        if part.empty:
-            continue
-        fig.add_trace(go.Bar(
-            y=part["label"], x=part["cushion_days"], name=risk_label(status), orientation="h",
-            marker=dict(color=RISK[status][2], cornerradius=CORNER_RADIUS), text=[f"{v:+.1f} days" for v in part["cushion_days"]],
-            textposition="outside", cliponaxis=False, textfont=dict(color=pal.ink_secondary),
-            customdata=part[["days_remaining", "arrival_bad_case_days"]].to_numpy(),
-            hovertemplate="%{y}<br>Stock lasts %{customdata[0]:.1f} days; a bad delivery arrives in %{customdata[1]:.0f}<br>"
-                          "Cushion %{x:+.1f} days<extra></extra>"))
-    # The legend is always shown: a status colour must be named (icon + label), even when only one status is present.
-    style(fig, pal, height=horizontal_bar_height(len(df), extra=64), legend=True, hovermode="closest")
-    fig.update_layout(bargap=bar_gap(), barmode="overlay", margin=dict(l=8, r=24, t=36, b=8))
-    fig.update_yaxes(categoryorder="array", categoryarray=list(df["label"]), autorange="reversed", showgrid=False)
-    low, high = min(0.0, float(df["cushion_days"].min())), max(0.0, float(df["cushion_days"].max()))
-    pad = 0.3 * max(high - low, 1.0)   # room beyond each end of the bars for their value labels
-    fig.update_xaxes(range=[low - pad, high + pad], showgrid=False, showticklabels=False, showline=False)
-    fig.add_vline(x=0, line=dict(color=pal.ink_muted, width=1))
-    return fig
 
 
 def stock_history_chart(df, pal: Palette) -> go.Figure:
@@ -225,74 +120,4 @@ def stock_history_chart(df, pal: Palette) -> go.Figure:
         fig.add_trace(line_trace(part["snapshot_date"], part["on_hand"], name, colour, pal, hover="%{y:,.0f} units"))
     style(fig, pal, height=320, legend=True)
     fig.update_yaxes(title_text="Units on hand at the end of the day", rangemode="tozero")
-    return fig
-
-
-# ---------------------------------------------------------------------------- Data Quality
-
-from .theme import STATUS  # noqa: E402
-
-
-def detection_chart(df, pal: Palette) -> go.Figure:
-    """For each planted error type: how many of its rows the checks caught. Anything missed is stacked in the critical colour."""
-    df = df.reset_index(drop=True)
-    fig = go.Figure(go.Bar(
-        y=df["label"], x=df["caught"], name="Caught", orientation="h", marker=dict(color=pal.accent, cornerradius=CORNER_RADIUS),
-        hovertemplate="%{y}: %{x} caught<extra></extra>"))
-    if (df["missed"] > 0).any():
-        fig.add_trace(go.Bar(
-            y=df["label"], x=df["missed"], name="✕ Missed", orientation="h",
-            marker=dict(color=STATUS["critical"], cornerradius=CORNER_RADIUS), hovertemplate="%{y}: %{x} missed<extra></extra>"))
-    style(fig, pal, height=horizontal_bar_height(len(df), extra=48), legend=len(fig.data) >= 2, hovermode="closest")
-    fig.update_layout(bargap=bar_gap(), barmode="stack", margin=dict(l=8, r=120, t=36 if len(fig.data) >= 2 else 12, b=8))
-    fig.update_yaxes(categoryorder="array", categoryarray=list(df["label"]), autorange="reversed", showgrid=False)
-    fig.update_xaxes(showgrid=False, showticklabels=False, showline=False, range=[0, float(df["planted_rows"].max()) * 1.05])
-    for _, row in df.iterrows():  # one selective label per bar, outside its end: "12 of 12 caught"
-        fig.add_annotation(x=row["planted_rows"], y=row["label"], text=f"{int(row['caught'])} of {int(row['planted_rows'])} caught",
-                           showarrow=False, xanchor="left", xshift=8, font=dict(color=pal.ink_secondary, size=13))
-    return fig
-
-
-# ---------------------------------------------------------------------------- Analysis
-
-
-def estimator_chart(df, truth: float, pal: Palette) -> go.Figure:
-    """Mean estimate of the planted effect from each method, in points, with a line at the true value.
-
-    The one number every method should hit is the subject, so the methods are accent bars and the truth is a single
-    solid line in the second colour, labelled directly.
-    """
-    df = df.reset_index(drop=True)
-    fig = go.Figure(go.Bar(
-        y=df["Estimator"], x=df["Mean estimate (points)"], orientation="h", marker=dict(color=pal.accent, cornerradius=CORNER_RADIUS),
-        hovertemplate="%{y}: %{x:.1f} points<extra></extra>"))
-    style(fig, pal, height=horizontal_bar_height(len(df), extra=64), hovermode="closest")
-    fig.update_layout(bargap=bar_gap(), margin=dict(l=8, r=16, t=28, b=8))
-    fig.update_yaxes(categoryorder="array", categoryarray=list(df["Estimator"]), autorange="reversed", showgrid=False)
-    top = float(max(df["Mean estimate (points)"].max(), truth)) * 1.15
-    fig.update_xaxes(showgrid=False, showticklabels=False, showline=False, range=[0, top])
-    fig.add_vline(x=truth, line=dict(color=pal.accent_2, width=LINE_WIDTH))
-    fig.add_annotation(x=truth, y=1, yref="paper", text=f"True effect {truth:.1f}", showarrow=False, yanchor="bottom",
-                       xanchor="left", xshift=6, font=dict(color=pal.accent_2, size=13))
-    for _, row in df.iterrows():
-        fig.add_annotation(x=row["Mean estimate (points)"], y=row["Estimator"], text=f"{row['Mean estimate (points)']:.1f}",
-                           showarrow=False, xanchor="left", xshift=8, font=dict(color=pal.ink_secondary, size=13))
-    return fig
-
-
-def lane_gain_chart(df, bar: float, pal: Palette) -> go.Figure:
-    """Extra drones shipped by each added lane, with its 95% interval, against the minimum worth building for."""
-    df = df.reset_index(drop=True)
-    fig = go.Figure(go.Bar(
-        y=df["label"], x=df["gain"], orientation="h", marker=dict(color=pal.accent, cornerradius=CORNER_RADIUS),
-        error_x=dict(type="data", symmetric=False, array=df["hi"] - df["gain"], arrayminus=df["gain"] - df["lo"],
-                     color=pal.ink_secondary, thickness=LINE_WIDTH, width=6),
-        hovertemplate="%{y}: %{x:.0f} more drones<extra></extra>"))
-    style(fig, pal, height=horizontal_bar_height(len(df), extra=64), hovermode="closest")
-    fig.update_layout(bargap=bar_gap(), margin=dict(l=8, r=16, t=28, b=8))
-    fig.update_yaxes(categoryorder="array", categoryarray=list(df["label"]), autorange="reversed", showgrid=False)
-    fig.update_xaxes(title_text="Extra drones shipped over 26 weeks (bar: 95% interval)", range=[0, float(df["hi"].max()) * 1.15])
-    fig.add_vline(x=bar, line=dict(color=pal.accent_2, width=LINE_WIDTH))
-    fig.add_annotation(x=bar, y=1, yref="paper", text=f"Minimum worth building: {bar:.0f}", showarrow=False, yanchor="bottom",
-                       xanchor="left", xshift=6, font=dict(color=pal.accent_2, size=13))
     return fig

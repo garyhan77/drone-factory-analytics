@@ -56,7 +56,6 @@ class PartSpec:
 
 @dataclass(frozen=True)
 class Policy:
-    kitting_cap: int  # pieces moved warehouse to line-side per day, for the whole station
     line_side_target_days: float
     order_cover_days: int
     demand_window_days: int
@@ -65,11 +64,11 @@ class Policy:
     spot_buy_lead_days: int
     spot_buy_eligible_supplier: str  # only this supplier's parts can trigger an emergency buy
     spot_buy_supplier: str
+    unreliable_order_cover_days: int | None = None  # the eligible (unreliable) supplier's parts are ordered with this cover instead
 
     @classmethod
     def from_config(cls) -> Policy:
         return cls(
-            kitting_cap=cfg.KITTING_CAP_PIECES_PER_DAY,
             line_side_target_days=cfg.LINE_SIDE_TARGET_DAYS,
             order_cover_days=cfg.ORDER_COVER_DAYS,
             demand_window_days=cfg.DEMAND_WINDOW_DAYS,
@@ -78,6 +77,7 @@ class Policy:
             spot_buy_lead_days=next(s.lead_days for s in cfg.SUPPLIERS if s.supplier_id == cfg.SPOT_BUY),
             spot_buy_eligible_supplier=cfg.RIDGELINE,
             spot_buy_supplier=cfg.SPOT_BUY,
+            unreliable_order_cover_days=cfg.RIDGELINE_ORDER_COVER_DAYS,
         )
 
 
@@ -285,18 +285,14 @@ class StationInventory:
         return max(total / window, p.launch_daily_units), max(total / weekdays, p.launch_daily_units * 7 / 5)
 
     def _kit(self, day: date) -> None:
-        """Move parts from the warehouse to line-side, in kit-list order, until the daily cap runs out."""
-        cap_left = self.policy.kitting_cap
+        """Move parts from the warehouse to line-side, in kit-list order, up to the line-side target."""
         for p in self.parts:
-            if cap_left <= 0:
-                break
             _, per_working_day = self._rates(p, day - timedelta(days=1))
             target = max(p.qty_per_drone, math.ceil(self.policy.line_side_target_days * per_working_day))
             need = target - self._total(self._line_side, p.part_id)
-            move = min(need, self._total(self._warehouse, p.part_id), cap_left)
+            move = min(need, self._total(self._warehouse, p.part_id))
             if move > 0:
                 self._transfer(p.part_id, move)
-                cap_left -= move
 
     def _position(self, p: PartSpec) -> int:
         on_order = sum(s.qty_expected for s in self._open[p.part_id])
@@ -307,17 +303,15 @@ class StationInventory:
         if position > p.reorder_point:
             return
         per_calendar_day, _ = self._rates(p, day)
-        qty = max(1, p.reorder_point + math.ceil(self.policy.order_cover_days * per_calendar_day) - position)
+        short_cover = self.policy.unreliable_order_cover_days
+        cover = short_cover if short_cover and p.supplier_id == self.policy.spot_buy_eligible_supplier else self.policy.order_cover_days
+        qty = max(1, p.reorder_point + math.ceil(cover * per_calendar_day) - position)
         expected = next_weekday(day + timedelta(days=p.lead_days))
         arrival, arriving = self._delivery(p.supplier_id, expected, qty, self._rngs[p.part_id])
         self._place(p, "LOT", p.supplier_id, day, expected, arrival, qty, arriving)
 
     def _stocked_out(self, p: PartSpec) -> bool:
-        """Work was blocked on this part today AND the warehouse has nothing left to kit.
-
-        A part that is blocked only because kitters ran out of time is not a supply problem,
-        so it does not trigger an emergency buy.
-        """
+        """Work was blocked on this part today AND the warehouse has nothing left to kit."""
         return p.part_id in self._blocked_today and self._total(self._warehouse, p.part_id) == 0
 
     def _maybe_spot_buy(self, p: PartSpec, day: date) -> None:

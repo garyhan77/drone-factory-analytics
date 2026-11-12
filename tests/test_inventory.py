@@ -36,7 +36,7 @@ PARTS = [
     PartSpec("T-002", "Plate", "SUP-O", qty_per_drone=2, reorder_point=6, lead_days=3, launch_daily_units=2.0),
 ]
 POLICY = Policy(
-    kitting_cap=100, line_side_target_days=2, order_cover_days=3, demand_window_days=14,
+    line_side_target_days=2, order_cover_days=3, demand_window_days=14,
     spot_buy_after_blocked_days=2, spot_buy_cover_days=3, spot_buy_lead_days=2,
     spot_buy_eligible_supplier="SUP-R", spot_buy_supplier="SUP-S",
 )
@@ -248,7 +248,7 @@ def test_parts_from_other_suppliers_never_trigger_an_emergency_buy():
     assert (shipments(inv, "T-002")["supplier_id"] != "SUP-S").all()
 
 
-# ---------------------------------------------------------------------------- lots and kitting
+# ---------------------------------------------------------------------------- lots
 
 def test_lots_are_used_oldest_first_and_a_job_spanning_two_lots_records_the_first():
     inv = make({"T-001": (6, 3), "T-002": (0, 1)})  # only one plate on the shelf; a job needs two
@@ -258,17 +258,6 @@ def test_lots_are_used_oldest_first_and_a_job_spanning_two_lots_records_the_firs
     result = inv.try_start(d(3), "S1")
     assert result.ok and result.lots["T-002"] == "LOT-T-002-001"  # first unit came from the older lot
     assert inv.line_side_lots("T-002") == [("LOT-T-002-002", 4)]
-
-
-def test_when_the_kitting_cap_binds_the_kit_list_order_decides_which_part_starves():
-    capped = Policy(**{**POLICY.__dict__, "kitting_cap": 3})
-    inv = make({"T-001": (10, 0), "T-002": (10, 0)}, policy=capped)
-    # Cap of 3 is spent on the first part on the list (target 3), leaving nothing for the second.
-    assert inv.line_side_lots("T-001") == [("LOT-T-001-001", 3)]
-    assert inv.line_side_lots("T-002") == []
-    assert inv.warehouse_lots("T-002") == [("LOT-T-002-001", 10)]  # stock is in the warehouse, not at the line
-    inv.advance_to(d(1))  # the next morning the first part is full, so the cap reaches the second
-    assert inv.line_side_lots("T-002") == [("LOT-T-002-001", 3)]
 
 
 # ---------------------------------------------------------------------------- invariants
@@ -339,8 +328,9 @@ def draws(supplier, expected, n=4000, qty=100, seed=0):
     return [config_delivery(supplier, expected, qty, rng) for _ in range(n)]
 
 
-WEEK_10 = cfg.START + timedelta(days=9 * 7)  # a Monday inside Ridgeline's disruption
-WEEK_3 = cfg.START + timedelta(days=2 * 7)
+FIRST_BAD, LAST_BAD = min(cfg.RIDGELINE_DISRUPTION_WEEKS), max(cfg.RIDGELINE_DISRUPTION_WEEKS)
+WEEK_10 = cfg.START + timedelta(days=(FIRST_BAD - 1) * 7)  # a Monday inside Ridgeline's disruption
+WEEK_3 = cfg.START + timedelta(days=(FIRST_BAD - 3) * 7)   # a Monday before it
 
 
 def test_ridgeline_is_late_and_short_far_more_often_when_the_shipment_is_due_in_the_disruption_weeks():
@@ -371,9 +361,9 @@ def test_arrivals_land_on_weekdays_and_disrupted_delays_stay_in_range():
 
 
 def test_the_disruption_is_keyed_to_the_expected_week_not_the_order_week():
-    just_before = cfg.START + timedelta(days=7 * 8)  # first day of week 9 is the first disrupted one
-    last_good = just_before - timedelta(days=3)  # the Friday of week 8
-    first_after = cfg.START + timedelta(days=7 * 11)  # first day of week 12
+    just_before = cfg.START + timedelta(days=7 * (FIRST_BAD - 1))  # first day of the first disrupted week
+    last_good = just_before - timedelta(days=3)  # the Friday before it
+    first_after = cfg.START + timedelta(days=7 * LAST_BAD)  # first day of the week after the last disrupted one
     rate = lambda due: np.mean([a > due for a, _ in draws(cfg.RIDGELINE, due, n=1500)])
     assert rate(last_good) < 0.15 and rate(just_before) > 0.85 and rate(first_after) < 0.15
 
@@ -387,17 +377,17 @@ def test_the_spot_buy_distributor_is_always_on_time_and_full():
 def test_default_starting_stock_covers_the_line_side_target_for_every_real_part():
     specs = part_specs()
     initial = default_initial(specs, Policy.from_config())
-    assert len(specs) == 40 and set(initial) == {s.part_id for s in specs}
+    assert len(specs) == 12 and set(initial) == {s.part_id for s in specs}
     for s in specs:
         warehouse, line_side = initial[s.part_id]
         assert line_side >= s.qty_per_drone and warehouse >= 0
         assert warehouse + line_side >= s.reorder_point  # starts above the reorder point
-    assert initial["MTR-003"][1] == 16  # motor mount: 2 per drone x 2.79 drones a day x 1.4 x 2 days, rounded up
+    assert initial["MTR-003"][1] == 16  # motor mount: 2 per drone x 2.86 drones a day x 1.4 x 2 days, rounded up
 
 
 def test_real_station_parts_are_in_kit_list_order():
     mtr = part_specs("MTR")
-    assert [s.part_id for s in mtr] == [f"MTR-{i:03d}" for i in range(1, 9)]
+    assert [s.part_id for s in mtr] == [f"MTR-{i:03d}" for i in range(1, 6)]
     assert previous_weekday(date(2026, 3, 8)) == date(2026, 3, 6)  # Sunday goes back to Friday
 
 
@@ -412,20 +402,3 @@ def test_kitters_do_not_work_weekends_so_an_empty_shelf_stays_empty_until_monday
     assert snap[(d(5), "T-001", WAREHOUSE)] == 4
     inv.advance_to(d(7))  # Monday 06:00: kitters are back
     assert sum(q for _, q in inv.line_side_lots("T-001")) == 3
-
-
-def test_a_part_blocked_only_by_kitting_does_not_trigger_an_emergency_buy():
-    """Stock sitting in the warehouse is a kitting problem, not a supply problem."""
-    # Plates are first on the kit list and the cap is 2 a day, so the bolt (the part that CAN trigger an
-    # emergency buy) is last in line and stays off the shelf for days while 50 sit in the warehouse.
-    plates_first = [PARTS[1], PARTS[0]]
-    capped = Policy(**{**POLICY.__dict__, "kitting_cap": 2})
-    inv = make({"T-001": (50, 0), "T-002": (50, 0)}, policy=capped, parts=plates_first)
-    blocked_days = 0
-    for day in (MON, d(1), d(2)):
-        result = inv.try_start(day, "S1")
-        blocked_days += "T-001" in result.blocked_parts
-    assert blocked_days == 3  # the bolt really was missing from the shelf on three working days in a row
-    inv.advance_to(d(3))
-    assert (shipments(inv, "T-001")["supplier_id"] != "SUP-S").all()  # but no emergency buy: the warehouse had stock
-    assert sum(q for _, q in inv.warehouse_lots("T-001")) > 40

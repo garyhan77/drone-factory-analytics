@@ -11,7 +11,6 @@ from psycopg import sql
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "sql" / "schema.sql"
-DQ_SCHEMA_PATH = ROOT / "sql" / "dq_schema.sql"
 
 # Every raw table, in the order the generator will fill them.
 TABLES = [
@@ -26,9 +25,6 @@ TABLES = [
     "drone_part_lots",
     "finished_goods",
 ]
-
-
-DQ_TABLES = ["dq_answer_key", "dq_flagged", "dq_results"]
 
 
 def connect(url: str | None = None) -> psycopg.Connection:
@@ -51,7 +47,7 @@ def is_remote_host(host: str | None) -> bool:
 
 
 def apply_schema(conn: psycopg.Connection, *, allow_remote: bool = False) -> None:
-    """Drop and recreate every raw table and data quality table. Existing data in them is lost.
+    """Drop and recreate every raw table. Existing data in them is lost.
 
     Refuses to run against a database on another machine unless allow_remote is set, so a hosted database
     can never be wiped by accident (for example by running `make build` with the wrong DATABASE_URL).
@@ -62,14 +58,13 @@ def apply_schema(conn: psycopg.Connection, *, allow_remote: bool = False) -> Non
             f"Refusing to drop and recreate tables on a remote database ({host}). "
             "If that is what you want, pass allow_remote=True (the build command's --remote flag).")
     conn.execute(SCHEMA_PATH.read_text())
-    conn.execute(DQ_SCHEMA_PATH.read_text())
     conn.commit()
 
 
 def apply_views(conn: psycopg.Connection) -> None:
-    """Drop and rebuild the clean and metric views (clean_*, v_*), in file-name order."""
+    """Drop and rebuild the metric views (v_*), in file-name order."""
     names = [n for (n,) in conn.execute(
-        "SELECT viewname FROM pg_views WHERE schemaname = 'public' AND (viewname LIKE 'clean\\_%' OR viewname LIKE 'v\\_%')"
+        "SELECT viewname FROM pg_views WHERE schemaname = 'public' AND viewname LIKE 'v\\_%'"
     ).fetchall()]
     for name in names:
         conn.execute(f'DROP VIEW IF EXISTS "{name}" CASCADE')
@@ -105,13 +100,6 @@ def load_dataframe(conn: psycopg.Connection, table: str, df: pd.DataFrame) -> in
     if table not in TABLES:
         raise ValueError(f"Unknown table: {table!r}")
     return _copy_dataframe(conn, f"raw_{table}", df)
-
-
-def load_dq_table(conn: psycopg.Connection, table: str, df: pd.DataFrame) -> int:
-    """Bulk-load a DataFrame into one of the data quality tables (dq_answer_key, dq_flagged, dq_results)."""
-    if table not in DQ_TABLES:
-        raise ValueError(f"Unknown data quality table: {table!r}")
-    return _copy_dataframe(conn, table, df)
 
 
 def load_all(conn: psycopg.Connection, frames: dict[str, pd.DataFrame]) -> dict[str, int]:

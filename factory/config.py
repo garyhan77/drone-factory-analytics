@@ -11,7 +11,7 @@ SEED = 42
 
 # --- Calendar ---------------------------------------------------------------
 START = date(2026, 1, 5)  # a Monday
-WEEKS = 26
+WEEKS = 12
 SHIFT_START_HOUR = 6  # two shifts, 06:00 to 22:00
 SHIFT_MIN = 16 * 60
 WORK_DAYS = 5
@@ -29,7 +29,7 @@ class Station:
     name: str
     lanes: int
     cycle_hours: float  # typical cycle time
-    fail_rate: float  # baseline first-pass fail rate
+    fail_rate: float  # baseline fail rate
 
 
 STATIONS = [
@@ -44,21 +44,13 @@ CYCLE_SIGMA = 0.25  # lognormal spread of cycle times
 CYCLE_MIN_FACTOR, CYCLE_MAX_FACTOR = 0.5, 2.5  # cap around the typical time
 REWORK_HOURS = (1.0, 2.5)  # extra time when a first inspection fails
 
-# Weekly releases: 18 in week 1, 30 by week 12, 34 by week 26.
-RELEASES_WEEK_1, RELEASES_MID, RELEASES_END = 18, 30, 34
-RELEASES_MID_WEEK = 12
-
+# A steady release rate: the same number of drones enter the line every week.
+RELEASES_PER_WEEK = 20
 
 
 def weekly_releases(week: int) -> int:
     """Drones released into the line in a given week (1-based)."""
-    if week <= RELEASES_MID_WEEK:
-        span = RELEASES_MID_WEEK - 1
-        value = RELEASES_WEEK_1 + (RELEASES_MID - RELEASES_WEEK_1) * (week - 1) / span
-    else:
-        span = WEEKS - RELEASES_MID_WEEK
-        value = RELEASES_MID + (RELEASES_END - RELEASES_MID) * (week - RELEASES_MID_WEEK) / span
-    return round(value)
+    return RELEASES_PER_WEEK
 
 
 # Optional confounder for the analysis layer (analysis/). With a slope above zero, every station's baseline
@@ -90,7 +82,7 @@ DEFECT_NAMES = {
 # The defect spike comes from the supply chain: a drone whose Motor & Prop fasteners came from an
 # emergency (spot-buy) lot fails more often. See SPIKE_FASTENERS below and factory/inventory.py.
 SPIKE_STATION = "MTR"
-SUBSTITUTE_FAIL_RATE = 0.22
+SUBSTITUTE_FAIL_RATE = 0.50
 SUBSTITUTE_LOOSE_FASTENER_SHARE = 0.75  # of those failures
 SPIKE_DEFECT = "MTR-LOOSE-FASTENER"
 
@@ -135,55 +127,27 @@ def _p(station, name, supplier, cost, qty):
 
 PARTS = [
     _p("AFL", "Carbon fibre sheet", "SUP-02", 85, 4),
-    _p("AFL", "Foam core block", "SUP-05", 22, 2),
     _p("AFL", "Epoxy resin kit", "SUP-05", 35, 1),
-    _p("AFL", "Fuselage mould insert", "SUP-02", 140, 1),
-    _p("AFL", "Vacuum bagging film", "SUP-05", 12, 2),
-    _p("AFL", "Structural fastener kit", "SUP-01", 18, 1),
-    _p("AFL", "Release agent", "SUP-05", 9, 1),
-    _p("AFL", "Peel ply section", "SUP-02", 7, 3),
     _p("WNG", "Wing spar", "SUP-02", 95, 2),
-    _p("WNG", "Wing skin panel", "SUP-02", 60, 2),
     _p("WNG", "Servo", "SUP-04", 28, 4),
-    _p("WNG", "Control horn", "SUP-01", 3, 4),
-    _p("WNG", "Hinge pin set", "SUP-01", 5, 2),
-    _p("WNG", "Wing connector", "SUP-03", 16, 2),
-    _p("WNG", "Foam rib set", "SUP-05", 14, 2),
-    _p("WNG", "Pushrod", "SUP-01", 4, 4),
     _p("MTR", "Brushless motor", "SUP-04", 120, 2),
     _p("MTR", "Propeller", "SUP-04", 45, 2),
-    _p("MTR", "Motor mount", "SUP-01", 14, 2),
-    _p("MTR", "Speed controller", "SUP-03", 55, 2),
+    _p("MTR", "Motor mount", "SUP-04", 14, 2),
     _p("MTR", "Prop nut", "SUP-01", 1.5, 2),
-    _p("MTR", "Thread locker", "SUP-01", 6, 1),
-    _p("MTR", "Motor wiring harness", "SUP-03", 18, 2),
-    _p("MTR", "Vibration damper", "SUP-05", 4, 4),
+    _p("MTR", "Speed controller", "SUP-03", 55, 2),
     _p("AVN", "Flight controller", "SUP-06", 310, 1),
-    _p("AVN", "GPS module", "SUP-06", 75, 1),
-    _p("AVN", "IMU sensor", "SUP-06", 90, 2),
-    _p("AVN", "Radio transceiver", "SUP-03", 130, 1),
     _p("AVN", "Battery pack", "SUP-03", 480, 1),
-    _p("AVN", "Power distribution board", "SUP-03", 65, 1),
-    _p("AVN", "Avionics harness", "SUP-03", 40, 1),
-    _p("AVN", "Parachute release module", "SUP-06", 160, 1),
-    _p("FNT", "Payload bay door", "SUP-02", 70, 1),
-    _p("FNT", "Latch assembly", "SUP-01", 15, 2),
-    _p("FNT", "Calibration label kit", "SUP-07", 3, 1),
-    _p("FNT", "Packaging foam set", "SUP-07", 18, 1),
     _p("FNT", "Shipping crate", "SUP-07", 85, 1),
-    _p("FNT", "Gasket set", "SUP-05", 8, 1),
-    _p("FNT", "Test seal kit", "SUP-05", 11, 1),
-    _p("FNT", "Quick-start card", "SUP-07", 2, 1),
 ]
 
-# The Motor & Prop fasteners whose substitute lot drives the defect spike.
-SPIKE_FASTENERS = ("Motor mount", "Prop nut", "Thread locker")
+# The Motor & Prop fastener whose substitute lot drives the defect spike. Ridgeline is its only supplier.
+SPIKE_FASTENERS = ("Prop nut",)
 
 # --- Supplier behaviour -------------------------------------------------------
 LATE_PROB, LATE_DAYS = 0.08, (1, 3)  # normal suppliers: late by 1 to 3 days
 SHORT_PROB, SHORT_FRACTION = 0.03, (0.6, 0.95)  # share of the order that arrives when short
 # Ridgeline, on shipments expected to arrive in these weeks:
-RIDGELINE_DISRUPTION_WEEKS = range(9, 12)
+RIDGELINE_DISRUPTION_WEEKS = range(4, 7)
 # A multi-week supplier crisis: severe enough that a healthy stock buffer cannot absorb it.
 RIDGELINE_LATE_PROB, RIDGELINE_LATE_DAYS = 0.95, (8, 14)
 RIDGELINE_SHORT_PROB, RIDGELINE_SHORT_FRACTION = 0.60, (0.4, 0.7)
@@ -191,32 +155,11 @@ RIDGELINE_SHORT_PROB, RIDGELINE_SHORT_FRACTION = 0.60, (0.4, 0.7)
 # --- Inventory policy ---------------------------------------------------------
 LAUNCH_DEMAND_WEEKS = range(1, 5)  # reorder points are sized from demand in weeks 1 to 4
 REORDER_SAFETY_DAYS = 12  # reorder point covers (lead time + this many days) of launch demand
+RIDGELINE_ORDER_COVER_DAYS = 7  # a cheap fastener is ordered little and often
+RIDGELINE_SAFETY_DAYS = 4  # Ridgeline's parts are stocked thin, so a late delivery empties the shelf
 ORDER_COVER_DAYS = 28  # orders go up to the reorder point plus this many days of demand
 DEMAND_WINDOW_DAYS = 14  # "recent demand" is the trailing average over this many days
 LINE_SIDE_TARGET_DAYS = 2  # kitters top line-side up to this many days of demand
-KITTING_CAP_PIECES_PER_DAY = 200  # per station
 SPOT_BUY_AFTER_BLOCKED_DAYS = 2  # working days a Ridgeline part blocks work before an emergency buy
 SPOT_BUY_COVER_DAYS = 7  # an emergency buy covers this many days of demand
 SUBSTITUTE_LOT_PREFIX = "SUB"
-
-
-# --- Planted data errors ---------------------------------------------------------
-# How many rows to corrupt for each error (fewer if the event window holds fewer eligible rows).
-PLANTED_COUNTS = {
-    "negative_inventory": 8,
-    "missing_defect_code": 4,
-    "orphan_inspections": 3,
-    "duplicate_work_orders": 12,
-    "end_before_start": 8,
-}
-# Checks that should flag nothing: they guard relationships that no error is planted into.
-GUARD_CHECKS = (
-    "status_timestamp_mismatch",
-    "stock_does_not_reconcile",
-    "traceability_lot_not_in_receiving",
-    "traceability_serial_not_in_work_orders",
-    "finished_goods_not_passed_final_test",
-    "finished_goods_timestamps_out_of_order",
-)
-OUTAGE_PAD_DAYS = 5  # the outage window runs this long past the last emergency lot arriving
-QUEUE_WAIT_THRESHOLD_HOURS = 24  # the Avionics queue is "building" from the first week its mean wait exceeds this
