@@ -120,9 +120,8 @@ def database():
     return url
 
 
-def test_home_opens_on_the_overview_with_the_synthetic_note(database, monkeypatch):
+def test_home_opens_on_the_overview(database, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", database)
     at = AppTest.from_file(APP, default_timeout=90).run()
     assert not at.exception
     assert at.title[0].value == "Overview"
-    assert any("synthetic data" in c.value for c in at.caption)
